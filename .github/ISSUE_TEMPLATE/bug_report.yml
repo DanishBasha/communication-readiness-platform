@@ -1,0 +1,98 @@
+name: Bug Report
+description: Report a reproducible defect in existing behaviour.
+title: "[bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, search for existing issues. Include only reproducible bugs — use the team Slack for questions.
+
+  - type: dropdown
+    id: service
+    attributes:
+      label: Affected Service
+      description: Which part of the system exhibits the bug?
+      options:
+        - "web (Next.js frontend)"
+        - "api (Node.js core)"
+        - "ai-service (FastAPI)"
+        - "auth / RBAC"
+        - "interview flow"
+        - "listening assessment"
+        - "credits"
+        - "reporting / performance"
+        - "agent"
+        - "RAG / knowledge retrieval"
+        - "async jobs (BullMQ)"
+        - "infrastructure / deployment"
+        - "other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of what the bug is.
+      placeholder: "When I submit a voice response, the credit is consumed twice if I click Submit rapidly."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps to reproduce the issue.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - Branch / commit:
+        - Node.js version:
+        - Python version:
+        - Browser (if frontend):
+        - OS:
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Messages
+      description: Paste log output or error messages. Redact any PII.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Security Impact
+      options:
+        - label: This bug has a security or data-access impact (auth bypass, privilege escalation, credit manipulation, data leak)
+          required: false
