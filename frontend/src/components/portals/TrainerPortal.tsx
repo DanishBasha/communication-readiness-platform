@@ -1,144 +1,87 @@
-import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import React from 'react';
 import { 
-  Send, 
-  Activity, 
-  AlertCircle,
-  Sparkles
+  Sparkles, 
+  Calendar, 
+  Plus, 
+  ArrowRight
 } from 'lucide-react';
 
 export const TrainerPortal: React.FC = () => {
-  const { createAssignment } = useApp();
-  const [drillTitle, setDrillTitle] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const handleCreateDrill = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!drillTitle) return;
-    createAssignment({
-      title: drillTitle,
-      assignedByRole: 'TRAINER',
-      assignedByName: 'Vikramaditya Sharma (Visiting Trainer)',
-      targetDomainOrTrack: 'Cloud Computing & DevOps',
-      dueDate: '2026-09-24',
-      isMandatory: false
-    });
-    setDrillTitle('');
-    setIsModalOpen(false);
-  };
-
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 text-stone-900">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
       
-      {/* Header */}
-      <div className="bg-white border border-stone-200/90 rounded-[32px] p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <span className="text-xs font-mono uppercase font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-900 border border-teal-200">
-            Visiting Trainer Workspace · Active Tenure (Day 6 of 15)
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-stone-900 mt-2">Domain Speech & Communication Analytics</h1>
-          <p className="text-xs sm:text-sm text-stone-500 mt-1">
-            Assigned Domain: <strong>Cloud Computing & DevOps</strong> (PEP Track). Use acoustic metrics to guide daily workshops.
+          <div className="flex items-center space-x-2.5">
+            <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Visiting Domain Trainer Workspace</h1>
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-neutral-900 text-white rounded font-mono">10-15 DAY TENURE</span>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1">
+            Active industry expert tenure: Conduct specialized mock rounds and submit domain rubrics.
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#191C1A] hover:bg-stone-800 text-white font-bold text-xs sm:text-sm shadow-md transition transform active:scale-95"
-        >
-          <Send className="w-4 h-4 text-emerald-400" />
-          <span>Assign Domain Practice Drill</span>
+        <button className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs">
+          <Plus className="w-3.5 h-3.5" />
+          <span>Assign Specialized Domain Mock</span>
         </button>
       </div>
 
-      {/* Speech Metrics Breakdown for Domain Cohort */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        
-        <div className="bg-white border border-stone-200/90 p-7 rounded-[28px] shadow-sm">
-          <div className="flex items-center justify-between mb-2 text-xs text-stone-500 font-bold">
-            <span>Average Speaking Pace</span>
-            <Activity className="w-4 h-4 text-emerald-600" />
+      <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2 text-xs text-neutral-500">
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Active Contract: Sept 15 – Sept 30, 2026</span>
+            <span>•</span>
+            <span className="text-emerald-600 font-medium">Day 5 of 15 Active</span>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-4xl font-black text-stone-900 font-mono">114</span>
-            <span className="text-xs text-stone-500">WPM</span>
-          </div>
-          <p className="text-xs text-amber-700 mt-3 font-medium">
-            Cohort pace is slightly hesitant. Recommend 2-minute impromptu speaking warm-ups before lecture.
-          </p>
+          <h3 className="text-base font-semibold text-neutral-900">Domain: Cloud DevOps & Distributed Systems</h3>
         </div>
 
-        <div className="bg-white border border-stone-200/90 p-7 rounded-[28px] shadow-sm">
-          <div className="flex items-center justify-between mb-2 text-xs text-stone-500 font-bold">
-            <span>Common Filler Words</span>
-            <AlertCircle className="w-4 h-4 text-amber-600" />
+        <div className="flex items-center space-x-3 text-xs">
+          <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xl">
+            <p className="text-[10px] text-neutral-400 font-mono">BATCH SIZE</p>
+            <p className="text-sm font-bold text-neutral-900">45 Students</p>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-4xl font-black text-amber-700 font-mono">16.2</span>
-            <span className="text-xs text-stone-500">avg per session</span>
-          </div>
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-mono">'uh' (38%)</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-mono">'like' (24%)</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-mono">'you know' (18%)</span>
+          <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xl">
+            <p className="text-[10px] text-neutral-400 font-mono">COMPLETED</p>
+            <p className="text-sm font-bold text-neutral-900">28 Mocks</p>
           </div>
         </div>
-
-        <div className="bg-white border border-stone-200/90 p-7 rounded-[28px] shadow-sm">
-          <div className="flex items-center justify-between mb-2 text-xs text-stone-500 font-bold">
-            <span>Technical Articulation</span>
-            <Sparkles className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-4xl font-black text-emerald-700 font-mono">76.8%</span>
-            <span className="text-xs text-stone-500">domain mastery</span>
-          </div>
-          <p className="text-xs text-stone-600 mt-3 font-medium">
-            Strong on Docker & CI/CD; needs reinforcement in Kubernetes ingress controllers & Prometheus.
-          </p>
-        </div>
-
       </div>
 
-      {/* Drill Dispatcher Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-stone-200 w-full max-w-md rounded-[28px] p-7 shadow-2xl relative text-stone-900">
-            <h3 className="text-lg font-black text-stone-900 mb-1">Assign Domain Practice Mock</h3>
-            <p className="text-xs text-stone-500 mb-4">Push a targeted interview session to Cloud Computing & DevOps students.</p>
-
-            <form onSubmit={handleCreateDrill} className="space-y-4">
-              <div>
-                <label className="text-xs text-stone-700 font-bold block mb-1">Drill Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Kubernetes & AWS Networking Rapid-Fire Drill"
-                  value={drillTitle}
-                  onChange={(e) => setDrillTitle(e.target.value)}
-                  className="w-full bg-stone-50 border border-stone-300 rounded-xl p-3 text-xs text-stone-900 focus:outline-none focus:border-stone-900"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-500 hover:text-stone-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-[#191C1A] hover:bg-stone-800 text-white font-bold text-xs transition"
-                >
-                  Publish Drill
-                </button>
-              </div>
-            </form>
-          </div>
+      <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
+        <div className="border-b border-neutral-100 pb-3">
+          <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Assigned Specialized Mock Rounds</h3>
+          <p className="text-xs text-neutral-500">Evaluate candidates on microservice resiliency, Docker orchestration, and Kubernetes pod scaling</p>
         </div>
-      )}
+
+        <div className="space-y-3 pt-2">
+          {[
+            { title: 'Docker & Kubernetes Ingress Controllers', cohort: 'PEP Track #04', completed: '12 / 15 Evaluated' },
+            { title: 'Kafka Partition Lag & High Concurrency Resiliency', cohort: 'HOPE Elite', completed: '16 / 18 Evaluated' },
+            { title: 'AWS Cloud Architecture & Terraform State Management', cohort: 'PEP Track #07', completed: 'Scheduled for Tomorrow' },
+          ].map((item, idx) => (
+            <div key={idx} className="p-4 bg-neutral-50 border border-neutral-200/80 rounded-xl flex items-center justify-between hover:bg-neutral-100/70 transition-colors">
+              <div>
+                <p className="text-xs font-semibold text-neutral-900">{item.title}</p>
+                <div className="flex items-center space-x-2 text-[11px] text-neutral-400 mt-1">
+                  <span className="px-1.5 py-0.5 rounded bg-white border border-neutral-200 text-neutral-600 font-mono">{item.cohort}</span>
+                  <span>•</span>
+                  <span>{item.completed}</span>
+                </div>
+              </div>
+              <button className="flex items-center space-x-1 text-xs font-medium text-neutral-800 hover:text-black">
+                <span>Review evaluations</span>
+                <ArrowRight className="w-3 h-3 ml-1" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
 
     </div>
   );

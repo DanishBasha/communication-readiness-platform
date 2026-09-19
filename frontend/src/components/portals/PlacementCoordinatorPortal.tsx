@@ -1,210 +1,184 @@
 import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
-import { 
-  Send, 
-  Search, 
-  TrendingUp,
-  ShieldCheck,
-  Building
-} from 'lucide-react';
 import { MOCK_MENTEES_LIST } from '../../data/mockData';
+import { 
+  Users, 
+  TrendingUp, 
+  Award, 
+  Layers, 
+  Search, 
+  Download, 
+  ArrowUpRight,
+  ShieldCheck,
+  Building2
+} from 'lucide-react';
 
 export const PlacementCoordinatorPortal: React.FC = () => {
-  const { assignments, createAssignment } = useApp();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [assignTitle, setAssignTitle] = useState('');
-  const [assignTarget, setAssignTarget] = useState('All Batches (2026)');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCohort, setSelectedCohort] = useState<string>('ALL');
 
-  const handleCreateAssignment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignTitle) return;
-    createAssignment({
-      title: assignTitle,
-      assignedByRole: 'PLACEMENT_COORDINATOR',
-      assignedByName: 'Prof. K. Venkatesh (Placement Officer)',
-      targetDomainOrTrack: assignTarget,
-      dueDate: '2026-09-30',
-      isMandatory: true
-    });
-    setAssignTitle('');
-    setIsAssignModalOpen(false);
-  };
+  const totalCandidates = 2840;
+  const hopeEliteCount = 58;
+  const pepDomainsCount = 21;
+  const placementReadyRate = 68.4;
 
-  const filteredMentees = MOCK_MENTEES_LIST.filter(m => 
-    m.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    m.rollNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.domain.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const cohorts = [
+    { id: 'ALL', label: 'All Candidates', count: 2840 },
+    { id: 'HOPE_ELITE', label: '★ HOPE Elite', count: 58 },
+    { id: 'HOPE_NON_ELITE', label: 'HOPE General', count: 420 },
+    { id: 'PEP', label: 'PEP 21 Domains', count: 1820 },
+    { id: 'DEPARTMENT', label: 'Department Stream', count: 542 },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 text-stone-900">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
       
-      {/* Top Banner */}
-      <div className="bg-white border border-stone-200/90 rounded-[32px] p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <span className="text-xs font-mono uppercase font-bold px-3 py-1 rounded-full bg-[#191C1A] text-white">
-            Placement Cell · Super Admin
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-stone-900 mt-2">Institution Readiness Overview</h1>
-          <p className="text-xs sm:text-sm text-stone-500 mt-1">
-            Centralized monitoring of 2,450 candidates across HOPE Elite, HOPE Non-Elite, 21 PEP Domains, and Department Streams.
+          <div className="flex items-center space-x-2.5">
+            <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Institutional Placement Intelligence</h1>
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-neutral-900 text-white rounded font-mono">SUPER ADMIN</span>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1">
+            Macro college-wide placement readiness, HOPE elite tracking, and domain benchmark oversight.
           </p>
         </div>
 
-        <button
-          onClick={() => setIsAssignModalOpen(true)}
-          className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#191C1A] hover:bg-stone-800 text-white font-bold text-xs sm:text-sm shadow-md transition transform active:scale-95"
-        >
-          <Send className="w-4 h-4 text-emerald-400" />
-          <span>Dispatch College-Wide Mock Interview</span>
-        </button>
-      </div>
-
-      {/* High-Level Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-stone-200/90 p-6 rounded-[24px] shadow-sm">
-          <span className="text-xs text-stone-500 font-medium block mb-1">Total Enrolled Students</span>
-          <span className="text-3xl font-black text-stone-900 font-mono">2,450</span>
-          <span className="text-[11px] text-emerald-700 font-bold block mt-2">✓ 100% Mentors Assigned</span>
-        </div>
-
-        <div className="bg-white border border-stone-200/90 p-6 rounded-[24px] shadow-sm">
-          <span className="text-xs text-stone-500 font-medium block mb-1">Placement Ready (&gt;80 Score)</span>
-          <span className="text-3xl font-black text-emerald-700 font-mono">1,280</span>
-          <span className="text-[11px] text-stone-400 block mt-2">52.2% of university cohort</span>
-        </div>
-
-        <div className="bg-white border border-stone-200/90 p-6 rounded-[24px] shadow-sm">
-          <span className="text-xs text-stone-500 font-medium block mb-1">HOPE Elite High Caliber</span>
-          <span className="text-3xl font-black text-stone-900 font-mono">58 / 60</span>
-          <span className="text-[11px] text-emerald-700 font-bold block mt-2">Cohort Average: 88.4%</span>
-        </div>
-
-        <div className="bg-white border border-stone-200/90 p-6 rounded-[24px] shadow-sm">
-          <span className="text-xs text-stone-500 font-medium block mb-1">Active Visiting Trainers</span>
-          <span className="text-3xl font-black text-amber-700 font-mono">18</span>
-          <span className="text-[11px] text-stone-500 block mt-2">100-Day Semester Training</span>
+        <div className="flex items-center space-x-2.5">
+          <button className="flex items-center space-x-1.5 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 px-3.5 py-2 rounded-xl text-xs font-medium transition-colors shadow-2xs">
+            <Download className="w-3.5 h-3.5 text-neutral-500" />
+            <span>Export CSV</span>
+          </button>
+          <button className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs">
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Generate Senate Report</span>
+          </button>
         </div>
       </div>
 
-      {/* Cohort Readiness Table */}
-      <div className="bg-white border border-stone-200/90 rounded-[28px] p-6 sm:p-8 shadow-sm space-y-4">
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-bold text-stone-900">Candidate Readiness Directory</h3>
-            <p className="text-xs text-stone-500">Filter across HOPE, PEP, and Department streams.</p>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-5 bg-white border border-neutral-200/90 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-neutral-500 text-xs mb-1.5">
+            <span className="font-medium">Total Candidates</span>
+            <Users className="w-4 h-4 text-neutral-400" />
           </div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{totalCandidates.toLocaleString()}</div>
+          <p className="text-[11px] text-neutral-400 mt-1">Registered for 2026 Season</p>
+        </div>
 
+        <div className="p-5 bg-white border border-neutral-200/90 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-neutral-500 text-xs mb-1.5">
+            <span className="font-medium">HOPE Elite Pool</span>
+            <Award className="w-4 h-4 text-neutral-900" />
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{hopeEliteCount}</div>
+          <p className="text-[11px] text-emerald-600 font-medium mt-1">98.2% readiness target</p>
+        </div>
+
+        <div className="p-5 bg-white border border-neutral-200/90 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-neutral-500 text-xs mb-1.5">
+            <span className="font-medium">PEP Active Domains</span>
+            <Layers className="w-4 h-4 text-neutral-400" />
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{pepDomainsCount} Tracks</div>
+          <p className="text-[11px] text-neutral-400 mt-1">Full-stack, Cloud, AI/ML, Embedded</p>
+        </div>
+
+        <div className="p-5 bg-white border border-neutral-200/90 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-neutral-500 text-xs mb-1.5">
+            <span className="font-medium">Eligibility Rate</span>
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{placementReadyRate}%</div>
+          <p className="text-[11px] text-emerald-600 font-medium mt-1">+4.2% from prior cohort</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 pb-3">
+        {cohorts.map((cohort) => (
+          <button
+            key={cohort.id}
+            onClick={() => setSelectedCohort(cohort.id)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
+              selectedCohort === cohort.id 
+                ? 'bg-neutral-900 text-white shadow-xs' 
+                : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600'
+            }`}
+          >
+            {cohort.label} ({cohort.count})
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white border border-neutral-200/90 rounded-2xl overflow-hidden shadow-xs">
+        <div className="p-4 sm:px-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
-            <input 
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <input
               type="text"
-              placeholder="Search by name, roll no, domain..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-300 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
+              placeholder="Filter candidate by name or roll number..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-9 pr-3 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-900 transition-colors"
             />
           </div>
+
+          <span className="text-xs text-neutral-500">
+            Showing active mock interview evaluations
+          </span>
         </div>
 
-        <div className="overflow-x-auto pt-2">
-          <table className="w-full text-left text-xs text-stone-700">
-            <thead className="bg-stone-50 text-stone-500 uppercase font-mono text-[11px] border-y border-stone-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
               <tr>
-                <th className="p-3.5 font-bold">Student</th>
-                <th className="p-3.5 font-bold">Roll No</th>
-                <th className="p-3.5 font-bold">Track / Domain</th>
-                <th className="p-3.5 font-bold">Readiness Score</th>
-                <th className="p-3.5 font-bold">Checklist</th>
-                <th className="p-3.5 font-bold">Status</th>
+                <th className="py-3 px-6 font-medium">CANDIDATE</th>
+                <th className="py-3 px-6 font-medium">COHORT TRACK</th>
+                <th className="py-3 px-6 font-medium">DOMAIN</th>
+                <th className="py-3 px-6 font-medium">MOCK SCORE</th>
+                <th className="py-3 px-6 font-medium">STATUS</th>
+                <th className="py-3 px-6 font-medium text-right">ACTION</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-stone-100">
-              {filteredMentees.map((m) => (
-                <tr key={m.id} className="hover:bg-stone-50 transition">
-                  <td className="p-3.5 font-bold text-stone-900">{m.name}</td>
-                  <td className="p-3.5 font-mono text-stone-500">{m.rollNumber}</td>
-                  <td className="p-3.5">
-                    <span className="px-2.5 py-1 rounded-full bg-stone-100 text-stone-800 font-mono text-[11px] font-semibold border border-stone-200">
-                      {m.track.replace('_', ' ')} • {m.domain}
+            <tbody className="divide-y divide-neutral-100">
+              {MOCK_MENTEES_LIST.map((s) => (
+                <tr key={s.id} className="hover:bg-neutral-50/70 transition-colors">
+                  <td className="py-3.5 px-6 font-medium text-neutral-900">
+                    <div>{s.name}</div>
+                    <div className="text-[10px] text-neutral-400 font-mono">{s.rollNumber}</div>
+                  </td>
+                  <td className="py-3.5 px-6">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-100 text-neutral-800 border border-neutral-200 font-mono">
+                      {s.track}
                     </span>
                   </td>
-                  <td className="p-3.5 font-black font-mono text-stone-900">{m.score}%</td>
-                  <td className="p-3.5 font-mono text-stone-500">{m.checklist}</td>
-                  <td className="p-3.5">
-                    <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
-                      m.status === 'PLACEMENT_READY' ? 'bg-emerald-100 text-emerald-900 border border-emerald-200' :
-                      m.status === 'ON_TRACK' ? 'bg-stone-100 text-stone-800 border border-stone-200' :
-                      m.status === 'NEEDS_ATTENTION' ? 'bg-amber-100 text-amber-900 border border-amber-200' :
-                      'bg-rose-100 text-rose-900 border border-rose-200'
-                    }`}>
-                      {m.status.replace('_', ' ')}
+                  <td className="py-3.5 px-6 text-neutral-600">
+                    {s.domain}
+                  </td>
+                  <td className="py-3.5 px-6">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-semibold text-[11px] bg-neutral-900 text-white">
+                      {s.score}/100
                     </span>
+                  </td>
+                  <td className="py-3.5 px-6">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
+                      {s.status}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-6 text-right">
+                    <button className="text-neutral-500 hover:text-neutral-900 font-medium inline-flex items-center">
+                      <span>Inspect</span>
+                      <ArrowUpRight className="w-3 h-3 ml-0.5" />
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-
       </div>
-
-      {/* Assign Modal */}
-      {isAssignModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-stone-200 w-full max-w-lg rounded-[28px] p-7 shadow-2xl relative text-stone-900">
-            <h3 className="text-lg font-black text-stone-900 mb-1">Dispatch Mock Interview Assignment</h3>
-            <p className="text-xs text-stone-500 mb-4">Assign practice mock tests university-wide or to specific student cohorts.</p>
-
-            <form onSubmit={handleCreateAssignment} className="space-y-4">
-              <div>
-                <label className="text-xs text-stone-700 font-bold block mb-1">Assignment Title</label>
-                <input 
-                  type="text"
-                  required
-                  placeholder="e.g. Pre-Placement Technical & Communication Mock #3"
-                  value={assignTitle}
-                  onChange={(e) => setAssignTitle(e.target.value)}
-                  className="w-full bg-stone-50 border border-stone-300 rounded-xl p-3 text-xs text-stone-900 focus:outline-none focus:border-stone-900"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-stone-700 font-bold block mb-1">Target Cohort</label>
-                <select
-                  value={assignTarget}
-                  onChange={(e) => setAssignTarget(e.target.value)}
-                  className="w-full bg-stone-50 border border-stone-300 rounded-xl p-3 text-xs text-stone-900 focus:outline-none focus:border-stone-900"
-                >
-                  <option value="All Batches (2026)">All Batches (2,450 Students)</option>
-                  <option value="HOPE Elite">HOPE Elite (Top 60 Coders)</option>
-                  <option value="HOPE Non-Elite">HOPE Non-Elite</option>
-                  <option value="PEP Track (All 21 Domains)">PEP Track (All 21 Domains)</option>
-                  <option value="Department Stream Only">Department Stream Only</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAssignModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-500 hover:text-stone-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-[#191C1A] hover:bg-stone-800 text-white font-bold text-xs transition"
-                >
-                  Dispatch Assignment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
     </div>
   );

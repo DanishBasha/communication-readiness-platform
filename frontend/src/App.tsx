@@ -13,7 +13,6 @@ import { TrainerPortal } from './components/portals/TrainerPortal';
 const MainContent: React.FC = () => {
   const { activeRole, activeView } = useApp();
 
-  // Student Views
   if (activeRole === 'STUDENT') {
     switch (activeView) {
       case 'INTERVIEW_ROOM':
@@ -28,7 +27,6 @@ const MainContent: React.FC = () => {
     }
   }
 
-  // Institutional Portals
   switch (activeRole) {
     case 'PLACEMENT_COORDINATOR':
       return <PlacementCoordinatorPortal />;
@@ -46,7 +44,7 @@ const MainContent: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <AppProvider>
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <div className="min-h-screen bg-[#FAFAFA] text-neutral-900 flex flex-col antialiased selection:bg-neutral-900 selection:text-white">
         <Navbar />
         <main className="flex-1">
           <MainContent />

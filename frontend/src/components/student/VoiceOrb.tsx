@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 
 interface VoiceOrbProps {
-  state: 'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING';
-  audioLevel?: number; // 0 to 1
+  state: 'idle' | 'listening' | 'speaking' | 'thinking';
+  volume?: number;
   size?: number;
 }
 
-export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel = 0.5, size = 260 }) => {
+export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, volume = 0.3, size = 180 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -22,115 +22,102 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel = 0.5, siz
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
-      const baseRadius = size * 0.28;
+      phase += 0.04;
 
-      phase += 0.035;
+      const pulseMultiplier = state === 'listening' ? 1 + volume * 0.45 :
+                              state === 'speaking' ? 1 + Math.sin(phase * 2) * 0.15 + volume * 0.35 :
+                              state === 'thinking' ? 1 + Math.sin(phase * 4) * 0.08 :
+                              1 + Math.sin(phase) * 0.03;
 
-      // Color Palette based on Bamboo & Organic Forest Theme
-      let primaryColor = 'rgba(45, 106, 79, '; // Deep Bamboo Jade (#2D6A4F)
-      let secondaryColor = 'rgba(82, 183, 136, '; // Fresh Leaf Green (#52B788)
-      let glowColor = 'rgba(45, 106, 79, 0.25)';
+      const baseRadius = (size * 0.35) * pulseMultiplier;
 
-      if (state === 'LISTENING') {
-        primaryColor = 'rgba(40, 140, 80, '; // Active Bamboo
-        secondaryColor = 'rgba(116, 198, 157, ';
-        glowColor = 'rgba(40, 140, 80, 0.35)';
-      } else if (state === 'THINKING') {
-        primaryColor = 'rgba(217, 119, 6, '; // Warm Amber (#D97706)
-        secondaryColor = 'rgba(245, 158, 11, ';
-        glowColor = 'rgba(217, 119, 6, 0.35)';
-      } else if (state === 'SPEAKING') {
-        primaryColor = 'rgba(25, 28, 26, '; // Deep Charcoal Ink (#191C1A)
-        secondaryColor = 'rgba(45, 106, 79, '; // Bamboo Accent
-        glowColor = 'rgba(25, 28, 26, 0.3)';
-      }
-
-      // Outer Gentle Pulsing Wave Rings
-      const ringCount = 3;
-      for (let i = ringCount; i >= 1; i--) {
-        const expansion = Math.sin(phase + i * 0.8) * 10 * (state === 'SPEAKING' || state === 'LISTENING' ? 1.4 : 0.5);
-        const ringRadius = baseRadius + i * 20 + expansion + (audioLevel * 12);
+      if (state === 'speaking' || state === 'listening') {
         ctx.beginPath();
-        ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
-        ctx.fillStyle = primaryColor + (0.08 / i) + ')';
-        ctx.fill();
+        const rippleRadius = baseRadius * (1.3 + Math.sin(phase * 2) * 0.15);
+        ctx.arc(centerX, centerY, rippleRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = state === 'listening' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(24, 24, 27, 0.15)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.beginPath();
+        const outerRadius = rippleRadius * 1.25;
+        ctx.arc(centerX, centerY, outerRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = state === 'listening' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(24, 24, 27, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
       }
 
-      // Core Organic Sphere Gradient
-      const dynamicRadius = baseRadius + Math.sin(phase * 1.4) * 5 + (audioLevel * 8);
       const gradient = ctx.createRadialGradient(
-        centerX - dynamicRadius * 0.3,
-        centerY - dynamicRadius * 0.3,
-        dynamicRadius * 0.1,
+        centerX - baseRadius * 0.2,
+        centerY - baseRadius * 0.2,
+        baseRadius * 0.1,
         centerX,
         centerY,
-        dynamicRadius
+        baseRadius
       );
 
-      if (state === 'SPEAKING') {
-        gradient.addColorStop(0, '#FFFFFF');
-        gradient.addColorStop(0.2, '#E8F5E9');
-        gradient.addColorStop(0.65, '#2D6A4F');
-        gradient.addColorStop(1, '#191C1A');
+      if (state === 'speaking') {
+        gradient.addColorStop(0, '#27272A');
+        gradient.addColorStop(0.6, '#18181B');
+        gradient.addColorStop(1, '#09090B');
+      } else if (state === 'listening') {
+        gradient.addColorStop(0, '#059669');
+        gradient.addColorStop(0.5, '#047857');
+        gradient.addColorStop(1, '#064E3B');
+      } else if (state === 'thinking') {
+        gradient.addColorStop(0, '#D97706');
+        gradient.addColorStop(0.5, '#B45309');
+        gradient.addColorStop(1, '#78350F');
       } else {
-        gradient.addColorStop(0, '#FFFFFF');
-        gradient.addColorStop(0.3, secondaryColor + '0.85)');
-        gradient.addColorStop(0.85, primaryColor + '0.95)');
-        gradient.addColorStop(1, primaryColor + '0.4)');
+        gradient.addColorStop(0, '#52525B');
+        gradient.addColorStop(0.6, '#27272A');
+        gradient.addColorStop(1, '#09090B');
       }
-
-      ctx.save();
-      ctx.shadowBlur = 30;
-      ctx.shadowColor = glowColor;
 
       ctx.beginPath();
-      // Smooth organic perimeter
-      const points = 36;
-      for (let j = 0; j <= points; j++) {
-        const angle = (j / points) * Math.PI * 2;
-        const wave = Math.sin(angle * 5 + phase * 2) * (state === 'LISTENING' || state === 'SPEAKING' ? 3.5 : 1.2);
-        const r = dynamicRadius + wave;
-        const x = centerX + Math.cos(angle) * r;
-        const y = centerY + Math.sin(angle) * r;
-        if (j === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
+      ctx.arc(centerX, centerY, baseRadius, 0, Math.PI * 2);
       ctx.fillStyle = gradient;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.12)';
+      ctx.shadowBlur = 20;
       ctx.fill();
-      ctx.restore();
+      ctx.shadowBlur = 0;
+
+      if (state === 'speaking' || state === 'listening') {
+        const barCount = 5;
+        const barWidth = 3;
+        const spacing = 7;
+        const totalW = (barCount * barWidth) + ((barCount - 1) * spacing);
+        const startX = centerX - totalW / 2;
+
+        for (let i = 0; i < barCount; i++) {
+          const barHeight = Math.max(4, (size * 0.18) * Math.abs(Math.sin(phase * 3 + i * 0.8)) * (volume * 1.5 + 0.3));
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.beginPath();
+          ctx.roundRect(startX + i * (barWidth + spacing), centerY - barHeight / 2, barWidth, barHeight, 2);
+          ctx.fill();
+        }
+      } else if (state === 'thinking') {
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(phase * 3);
+        ctx.beginPath();
+        ctx.arc(0, 0, baseRadius * 0.5, 0, Math.PI * 1.2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.restore();
+      }
 
       animationFrameId = requestAnimationFrame(render);
     };
 
     render();
-
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, [state, audioLevel, size]);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [state, volume, size]);
 
   return (
-    <div className="flex flex-col items-center justify-center relative select-none">
-      <canvas 
-        ref={canvasRef} 
-        width={size} 
-        height={size} 
-        className="transition-all duration-300 drop-shadow-lg"
-      />
-      <div className="mt-4 flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white border border-stone-200 shadow-sm text-xs font-semibold text-stone-700">
-        <span className={`w-2 h-2 rounded-full ${
-          state === 'LISTENING' ? 'bg-emerald-500 animate-ping' :
-          state === 'THINKING' ? 'bg-amber-500 animate-pulse' :
-          state === 'SPEAKING' ? 'bg-stone-900 animate-pulse' : 'bg-stone-300'
-        }`} />
-        <span>
-          {state === 'LISTENING' && 'Listening to your voice...'}
-          {state === 'THINKING' && 'AI Companion is thinking...'}
-          {state === 'SPEAKING' && 'AI Interviewer speaking...'}
-          {state === 'IDLE' && 'Ready when you are'}
-        </span>
-      </div>
+    <div className="flex flex-col items-center justify-center">
+      <canvas ref={canvasRef} width={size} height={size} className="transition-all duration-300" />
     </div>
   );
 };

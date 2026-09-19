@@ -1,346 +1,329 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { ResumeUploadModal } from './ResumeUploadModal';
+import { CriteriaTask } from '../../types';
 import { 
+  Mic, 
+  Headphones, 
   FileText, 
   CheckCircle2, 
   Clock, 
-  ExternalLink, 
-  Mic2, 
-  Headphones, 
-  ArrowRight, 
   GitBranch, 
-  Code, 
-  Users, 
-  TrendingUp, 
-  ShieldCheck,
-  Sparkles
+  Code2, 
+  Sparkles, 
+  ShieldCheck, 
+  ArrowUpRight,
+  TrendingUp,
+  Award
 } from 'lucide-react';
+import { ResumeUploadModal } from './ResumeUploadModal';
 
 export const StudentDashboard: React.FC = () => {
-  const { student, startInterview, setActiveView, toggleCriteriaTask } = useApp();
-  const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
+  const { 
+    student, 
+    startInterview, 
+    toggleCriteriaTask, 
+    latestReport, 
+    setActiveView 
+  } = useApp();
 
-  const completedTasksCount = student.criteriaTasks.filter(t => t.isCompleted).length;
-  const verifiedTasksCount = student.criteriaTasks.filter(t => t.verifiedByMentor).length;
-  const taskProgressPercent = Math.round((completedTasksCount / student.criteriaTasks.length) * 100);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
-  const trackBadgeColors: { [key: string]: string } = {
-    HOPE_ELITE: 'bg-[#191C1A] text-white border-stone-800',
-    HOPE_NON_ELITE: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-    PEP: 'bg-emerald-100 text-emerald-900 border-emerald-300',
-    DEPARTMENT: 'bg-stone-100 text-stone-800 border-stone-300'
-  };
+  const completedCriteriaCount = student.criteriaTasks.filter((c: CriteriaTask) => c.isCompleted).length;
+  const verifiedCriteriaCount = student.criteriaTasks.filter((c: CriteriaTask) => c.verifiedByMentor).length;
+  const progressPercent = Math.round((completedCriteriaCount / student.criteriaTasks.length) * 100);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
       
-      {/* 1. Student Profile Hero Card (Warm Paper & Deep Ink) */}
-      <div className="bg-white border border-stone-200/90 rounded-[28px] p-6 sm:p-8 shadow-sm relative overflow-hidden">
-        <div className="absolute -right-16 -top-16 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      {/* 1. Candidate Hero Header */}
+      <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 sm:p-8 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900 tracking-tight">{student.name}</h1>
-              <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200 font-bold">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900">
+                {student.name}
+              </h1>
+              <span className="px-2.5 py-1 text-xs font-semibold bg-neutral-900 text-white rounded-full">
+                ★ {student.track}
+              </span>
+              <span className="px-2.5 py-1 text-xs font-medium bg-neutral-100 text-neutral-600 rounded-full border border-neutral-200 font-mono">
                 {student.rollNumber}
               </span>
-              <span className={`text-xs font-bold px-3 py-1 rounded-full border shadow-sm ${trackBadgeColors[student.track]}`}>
-                {student.track === 'HOPE_ELITE' && '★ HOPE Elite (High Caliber)'}
-                {student.track === 'HOPE_NON_ELITE' && 'HOPE Coding Track'}
-                {student.track === 'PEP' && `PEP: ${student.pepDomain}`}
-                {student.track === 'DEPARTMENT' && 'Department Stream'}
-              </span>
             </div>
 
-            <p className="text-xs sm:text-sm text-stone-600 font-medium">
-              {student.department} • Class of {student.batchYear}
+            <p className="text-sm text-neutral-500 max-w-2xl">
+              {student.department} · Batch of {student.batchYear} · Primary Track: {student.pepDomain || 'Full Stack'}
             </p>
 
-            {/* Mentor Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-stone-50 border border-stone-200 text-xs text-stone-700">
-              <Users className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Assigned Mentor: <strong className="text-stone-900 font-bold">{student.mentorName}</strong></span>
-              <span className="text-[11px] text-stone-400">({student.mentorEmail})</span>
+            <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-neutral-500">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-neutral-400 font-normal">Faculty Mentor:</span>
+                <span className="font-medium text-neutral-800">{student.mentorName}</span>
+                <span className="text-neutral-400">({student.mentorEmail})</span>
+              </div>
             </div>
           </div>
 
-          {/* Right Action: Upload / Manage Resume */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <button
-              onClick={() => setIsResumeModalOpen(true)}
-              className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-[#191C1A] hover:bg-stone-800 text-white font-bold text-xs sm:text-sm shadow-md transition transform active:scale-95"
+              onClick={() => setUploadModalOpen(true)}
+              className="flex items-center space-x-2 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-neutral-800 px-4 py-2.5 rounded-xl text-xs font-medium transition-all shadow-2xs"
             >
-              <FileText className="w-4 h-4 text-emerald-400" />
-              <span>{student.resume ? 'Manage / Update Resume' : 'Upload Resume (Mandatory)'}</span>
+              <FileText className="w-4 h-4 text-neutral-500" />
+              <span>{student.resume ? 'Update Resume' : 'Upload Resume'}</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 ml-1"></span>
             </button>
+
+            {latestReport && (
+              <button
+                onClick={() => setActiveView('REPORT_VIEW')}
+                className="flex items-center space-x-2 bg-neutral-900 hover:bg-black text-white px-4 py-2.5 rounded-xl text-xs font-medium transition-all shadow-xs"
+              >
+                <TrendingUp className="w-4 h-4" />
+                <span>View Scorecard ({latestReport.overallScore}/100)</span>
+              </button>
+            )}
           </div>
 
         </div>
 
-        {/* Coding Handles Bar */}
-        <div className="mt-6 pt-6 border-t border-stone-100 flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-stone-500 font-medium">Coding Handles:</span>
-            
-            {student.codingHandles.leetcode && (
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-50 text-stone-800 border border-stone-200 font-semibold">
-                <Code className="w-3.5 h-3.5 text-amber-600" />
-                <span>LeetCode: <strong>{student.codingHandles.leetcode}</strong> ({student.codingHandles.leetcodeSolved} solved)</span>
-              </span>
-            )}
-
-            {student.codingHandles.github && (
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-50 text-stone-800 border border-stone-200 font-semibold">
-                <GitBranch className="w-3.5 h-3.5 text-stone-600" />
-                <span>GitHub: <strong>{student.codingHandles.github.replace('https://github.com/', '')}</strong> ({student.codingHandles.githubRepos} repos)</span>
-              </span>
-            )}
+        {/* Profiles Stat Strip */}
+        <div className="mt-6 pt-6 border-t border-neutral-100 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60">
+            <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
+              <span>LeetCode Solved</span>
+              <Code2 className="w-3.5 h-3.5 text-neutral-400" />
+            </div>
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-bold text-neutral-900">{student.codingHandles.leetcodeSolved || 248}</span>
+              <span className="text-[11px] text-neutral-500 font-medium">/ 300 Target</span>
+            </div>
+            <p className="text-[10px] text-neutral-400 mt-1 font-mono">@{student.codingHandles.leetcode || 'aravind_k'}</p>
           </div>
 
-          <div className="text-emerald-700 flex items-center gap-1.5 font-mono text-[11px] font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Profile Verified</span>
+          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60">
+            <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
+              <span>GitHub Repos</span>
+              <GitBranch className="w-3.5 h-3.5 text-neutral-400" />
+            </div>
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-bold text-neutral-900">{student.codingHandles.githubRepos || 18}</span>
+              <span className="text-[11px] text-neutral-500 font-medium">Public</span>
+            </div>
+            <p className="text-[10px] text-neutral-400 mt-1 font-mono">@{student.codingHandles.github || 'aravindkumar'}</p>
+          </div>
+
+          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60">
+            <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
+              <span>Mentor Sign-offs</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            </div>
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-bold text-neutral-900">{verifiedCriteriaCount}</span>
+              <span className="text-[11px] text-neutral-500 font-medium">/ {student.criteriaTasks.length} items</span>
+            </div>
+            <p className="text-[10px] text-emerald-600 font-medium mt-1">Mentor verification active</p>
+          </div>
+
+          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60">
+            <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
+              <span>Readiness Progress</span>
+              <Award className="w-3.5 h-3.5 text-neutral-400" />
+            </div>
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-bold text-neutral-900">{progressPercent}%</span>
+              <span className="text-[11px] text-neutral-500 font-medium">Cohort target</span>
+            </div>
+            <div className="w-full bg-neutral-200 h-1 rounded-full mt-2 overflow-hidden">
+              <div className="bg-neutral-900 h-full rounded-full" style={{ width: `${progressPercent}%` }} />
+            </div>
           </div>
         </div>
-
       </div>
 
-      {/* 2. THE TWO PRIMARY ACTION CARDS (Bold Ink & Warm Bamboo) */}
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-lg sm:text-xl font-extrabold text-stone-900 tracking-tight">Choose Assessment Mode</h2>
-          <p className="text-xs text-stone-500">Voice-first proctored sessions designed to build natural communication clarity under pressure.</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          
-          {/* Card A: Start AI Mock Interview (Bold Black & White with Bamboo) */}
-          <div className="group relative bg-[#181C19] text-white border border-stone-800 rounded-[32px] p-8 shadow-xl hover:shadow-2xl transition-all duration-300 flex flex-col justify-between overflow-hidden">
-            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-
-            <div className="space-y-4 relative z-10">
-              <div className="flex items-center justify-between">
-                <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white group-hover:scale-110 transition duration-300">
-                  <Mic2 className="w-7 h-7 text-emerald-400" />
-                </div>
-                <span className="text-xs font-mono uppercase font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Voice-First · Proctored
-                </span>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-black text-white group-hover:text-emerald-300 transition">
-                  Attend AI Mock Interview
-                </h3>
-                <p className="text-xs sm:text-sm text-stone-300 mt-2 leading-relaxed">
-                  Technical interview grounded directly in your uploaded resume projects and domain track. Features adaptive difficulty and real-time speech diagnostics.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 pt-2">
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/10 text-stone-200 border border-white/10">
-                  Resume-Grounded Questions
-                </span>
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/10 text-stone-200 border border-white/10">
-                  WPM & Filler Detection
-                </span>
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/10 text-stone-200 border border-white/10">
-                  Anti-Tab-Switch Proctoring
-                </span>
-              </div>
+      {/* 2. Primary Action Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        {/* Card A: Voice AI Mock Interview */}
+        <div className="relative overflow-hidden bg-neutral-950 text-white rounded-2xl p-7 border border-neutral-800 shadow-sm flex flex-col justify-between group">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-neutral-800/80 text-neutral-200 border border-neutral-700">
+                <Sparkles className="w-3 h-3 text-emerald-400" />
+                <span>Resume-Grounded Proctored Interview</span>
+              </span>
+              <span className="text-[11px] text-neutral-400 font-mono">PROCTORED</span>
             </div>
 
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight text-white">
+                Attend AI Mock Interview
+              </h2>
+              <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">
+                Engage in an adaptive verbal technical interview grounded in your uploaded resume projects, concurrency concepts, and algorithmic problem solving.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-2">
+              <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-2.5 text-center">
+                <p className="text-[10px] text-neutral-400 uppercase tracking-wider font-mono">Mode</p>
+                <p className="text-xs font-medium text-neutral-200 mt-0.5">Voice-to-Voice</p>
+              </div>
+              <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-2.5 text-center">
+                <p className="text-[10px] text-neutral-400 uppercase tracking-wider font-mono">Adaptive</p>
+                <p className="text-xs font-medium text-neutral-200 mt-0.5">3 Question Turns</p>
+              </div>
+              <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-2.5 text-center">
+                <p className="text-[10px] text-neutral-400 uppercase tracking-wider font-mono">Proctoring</p>
+                <p className="text-xs font-medium text-emerald-400 mt-0.5">Strict Focus</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-neutral-800 flex items-center justify-between">
+            <span className="text-xs text-neutral-400">Includes WPM Pace & Filler Diagnostics</span>
             <button
               onClick={() => startInterview('MOCK_INTERVIEW')}
-              className="mt-8 w-full py-4 px-6 rounded-2xl font-black text-xs sm:text-sm bg-white hover:bg-emerald-50 text-[#181C19] shadow-lg flex items-center justify-center gap-2 group-hover:gap-3 transition duration-200"
+              className="inline-flex items-center space-x-2 bg-white hover:bg-neutral-100 text-neutral-950 font-semibold px-5 py-2.5 rounded-xl text-xs transition-all shadow-sm"
             >
-              <span>Launch Mock Interview Room</span>
-              <ArrowRight className="w-4 h-4 text-emerald-600" />
+              <Mic className="w-3.5 h-3.5" />
+              <span>Launch Interview</span>
+              <ArrowUpRight className="w-3.5 h-3.5 ml-0.5" />
             </button>
           </div>
+        </div>
 
-          {/* Card B: Start Listening Comprehension (Warm Earth & Sage) */}
-          <div className="group relative bg-[#F2ECE4] text-stone-900 border border-stone-300/80 rounded-[32px] p-8 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="w-14 h-14 rounded-2xl bg-white border border-stone-200 flex items-center justify-center text-stone-900 group-hover:scale-110 transition duration-300 shadow-sm">
-                  <Headphones className="w-7 h-7 text-emerald-700" />
-                </div>
-                <span className="text-xs font-mono uppercase font-bold px-3 py-1 rounded-full bg-stone-200 text-stone-800 border border-stone-300">
-                  Auditory Comprehension
-                </span>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-black text-stone-900 group-hover:text-emerald-800 transition">
-                  Attend Listening Comprehension
-                </h3>
-                <p className="text-xs sm:text-sm text-stone-600 mt-2 leading-relaxed">
-                  Listen to an AI-narrated corporate scenario or technical specification (text is hidden). Respond verbally to comprehension questions to test active listening and retention.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 pt-2">
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 shadow-2xs">
-                  Hidden Text Audio Passage
-                </span>
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 shadow-2xs">
-                  Verbal Retention Scoring
-                </span>
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 shadow-2xs">
-                  Concise Summary Check
-                </span>
-              </div>
+        {/* Card B: Listening Comprehension */}
+        <div className="relative overflow-hidden bg-white text-neutral-900 rounded-2xl p-7 border border-neutral-200/90 shadow-xs flex flex-col justify-between group hover:border-neutral-300 transition-all">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 text-neutral-700 border border-neutral-200">
+                <Headphones className="w-3 h-3 text-neutral-600" />
+                <span>Auditory Retention & Briefing</span>
+              </span>
+              <span className="text-[11px] text-neutral-400 font-mono">2 REPLAYS MAX</span>
             </div>
 
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight text-neutral-900">
+                Listening Comprehension
+              </h2>
+              <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed">
+                Listen to a client architecture requirement passage without text cues, followed by 2 targeted verbal questions testing precision listening.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-2">
+              <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 text-center">
+                <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-mono">Audio Pass</p>
+                <p className="text-xs font-medium text-neutral-800 mt-0.5">FinPay Gateway</p>
+              </div>
+              <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 text-center">
+                <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-mono">Format</p>
+                <p className="text-xs font-medium text-neutral-800 mt-0.5">Audio Only</p>
+              </div>
+              <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-2.5 text-center">
+                <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-mono">Feedback</p>
+                <p className="text-xs font-medium text-neutral-800 mt-0.5">Instant Score</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-neutral-100 flex items-center justify-between">
+            <span className="text-xs text-neutral-500">Tests auditory retention & verbal recall</span>
             <button
               onClick={() => startInterview('LISTENING_COMPREHENSION')}
-              className="mt-8 w-full py-4 px-6 rounded-2xl font-black text-xs sm:text-sm bg-[#191C1A] hover:bg-stone-800 text-white shadow-md flex items-center justify-center gap-2 group-hover:gap-3 transition duration-200"
+              className="inline-flex items-center space-x-2 bg-neutral-900 hover:bg-black text-white font-medium px-5 py-2.5 rounded-xl text-xs transition-all shadow-xs"
             >
-              <span>Launch Listening Session</span>
-              <ArrowRight className="w-4 h-4 text-emerald-400" />
+              <Headphones className="w-3.5 h-3.5" />
+              <span>Start Listening</span>
+              <ArrowUpRight className="w-3.5 h-3.5 ml-0.5" />
             </button>
           </div>
-
         </div>
+
       </div>
 
-      {/* 3. Placement Criteria Checklist & Recent Score History */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Placement Criteria Checklist */}
-        <div className="lg:col-span-2 bg-white border border-stone-200/90 rounded-[28px] p-6 sm:p-8 shadow-sm space-y-4">
-          
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
-            <div>
-              <h3 className="text-base sm:text-lg font-bold text-stone-900">College Placement Criteria Checklist</h3>
-              <p className="text-xs text-stone-500">Imported from College CSV. Check off completed items for Faculty Mentor verification.</p>
-            </div>
-            
-            <div className="text-right font-mono text-xs">
-              <span className="text-emerald-700 font-bold">{completedTasksCount} / {student.criteriaTasks.length} Completed</span>
-              <span className="text-stone-400 ml-2">({verifiedTasksCount} verified)</span>
-            </div>
-          </div>
-
-          {/* Progress bar */}
-          <div className="w-full bg-stone-100 rounded-full h-2.5">
-            <div 
-              className="bg-emerald-600 h-2.5 rounded-full transition-all duration-500 shadow-sm"
-              style={{ width: `${taskProgressPercent}%` }}
-            />
-          </div>
-
-          {/* Checklist items */}
-          <div className="space-y-3 pt-2">
-            {student.criteriaTasks.map((task) => (
-              <div 
-                key={task.id}
-                onClick={() => toggleCriteriaTask(task.id)}
-                className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between ${
-                  task.isCompleted 
-                    ? 'bg-stone-50 border-stone-200' 
-                    : 'bg-white border-stone-200/80 hover:border-emerald-500/40 hover:bg-stone-50/50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition ${
-                    task.isCompleted 
-                      ? 'bg-emerald-600 border-emerald-600 text-white' 
-                      : 'border-stone-300 bg-white'
-                  }`}>
-                    {task.isCompleted && <CheckCircle2 className="w-4 h-4" />}
-                  </div>
-
-                  <div>
-                    <span className={`text-xs sm:text-sm font-semibold block ${task.isCompleted ? 'text-stone-400 line-through' : 'text-stone-900'}`}>
-                      {task.title}
-                    </span>
-                    <span className="text-xs text-stone-500 block mt-0.5">
-                      {task.description}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {task.verifiedByMentor ? (
-                    <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Mentor Verified
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1 font-semibold">
-                      <Clock className="w-3 h-3 text-amber-600" /> Pending Sign-off
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-        </div>
-
-        {/* Recent Performance & Score Trends */}
-        <div className="bg-white border border-stone-200/90 rounded-[28px] p-6 sm:p-8 shadow-sm flex flex-col justify-between">
-          
+      {/* 3. Placement Criteria Checklist */}
+      <div className="bg-white border border-neutral-200/90 rounded-2xl overflow-hidden shadow-xs">
+        <div className="p-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-stone-900">Latest Scorecard</h3>
-              <TrendingUp className="w-4 h-4 text-emerald-600" />
+            <div className="flex items-center space-x-2">
+              <h3 className="text-base font-semibold tracking-tight text-neutral-900">
+                College Placement Readiness Criteria
+              </h3>
+              <span className="px-2 py-0.5 text-[11px] font-medium bg-neutral-100 text-neutral-600 rounded-full border border-neutral-200 font-mono">
+                {completedCriteriaCount} of {student.criteriaTasks.length} Completed
+              </span>
             </div>
-
-            {student.recentReports.length > 0 ? (
-              <div className="space-y-4">
-                <div className="bg-stone-50 p-6 rounded-2xl border border-stone-200 text-center">
-                  <span className="text-xs text-stone-500 font-mono uppercase font-semibold">Placement Readiness</span>
-                  <div className="text-5xl font-black text-stone-900 font-mono my-2">
-                    {student.recentReports[0].overallScore}
-                    <span className="text-sm text-stone-400 font-normal">/100</span>
-                  </div>
-                  <span className="text-xs text-emerald-700 font-bold bg-emerald-100/60 px-2.5 py-0.5 rounded-full">
-                    Technical: {student.recentReports[0].technicalScore}% • Comm: {student.recentReports[0].communicationScore}%
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs">
-                  <div className="flex justify-between text-stone-600">
-                    <span>Speaking Pace:</span>
-                    <strong className="text-stone-900 font-mono">{student.recentReports[0].averageWpm} WPM (Ideal)</strong>
-                  </div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>Filler Words ('uh', 'um'):</span>
-                    <strong className="text-amber-700 font-mono">{student.recentReports[0].totalFillerWords} detected</strong>
-                  </div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>Proctor Status:</span>
-                    <strong className="text-emerald-700 font-mono">Verified Clean</strong>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-stone-400">No previous mock interview recorded.</p>
-            )}
+            <p className="text-xs text-neutral-500 mt-1">
+              Checklist items imported from college placement syllabus. Click items to toggle; mentor sign-off requires mentor verification.
+            </p>
           </div>
 
-          <button
-            onClick={() => setActiveView('REPORT_VIEW')}
-            className="mt-6 w-full py-3 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold border border-stone-300 transition flex items-center justify-center gap-1.5"
-          >
-            <span>View Full Diagnostic Report</span>
-            <ExternalLink className="w-3.5 h-3.5 text-stone-500" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs font-medium text-neutral-500">Verified Status:</span>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+              <ShieldCheck className="w-3 h-3 mr-1" /> {verifiedCriteriaCount} Signed Off
+            </span>
+          </div>
+        </div>
 
+        <div className="divide-y divide-neutral-100">
+          {student.criteriaTasks.map((item: CriteriaTask) => (
+            <div 
+              key={item.id}
+              className={`p-4 sm:px-6 flex items-center justify-between hover:bg-neutral-50/70 transition-colors ${
+                item.isCompleted ? 'bg-neutral-50/30' : ''
+              }`}
+            >
+              <div className="flex items-start space-x-3.5 min-w-0">
+                <button
+                  onClick={() => toggleCriteriaTask(item.id)}
+                  className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center transition-all flex-shrink-0 ${
+                    item.isCompleted 
+                      ? 'bg-neutral-900 text-white border border-neutral-900' 
+                      : 'border border-neutral-300 hover:border-neutral-400 bg-white'
+                  }`}
+                >
+                  {item.isCompleted && <CheckCircle2 className="w-3.5 h-3.5" />}
+                </button>
+                <div className="min-w-0">
+                  <div className="flex items-center space-x-2">
+                    <p className={`text-xs font-medium ${item.isCompleted ? 'line-through text-neutral-400' : 'text-neutral-800'}`}>
+                      {item.title}
+                    </p>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono">
+                      {item.targetTrack}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-400 mt-0.5 truncate">
+                    {item.description}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3 ml-4 flex-shrink-0">
+                {item.verifiedByMentor ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+                    <ShieldCheck className="w-3 h-3 mr-1" /> Verified
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/70">
+                    <Clock className="w-3 h-3 mr-1" /> Pending Sign-off
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
 
       </div>
 
-      {/* Mandatory Resume Upload Modal */}
-      <ResumeUploadModal
-        isOpen={isResumeModalOpen}
-        onClose={() => setIsResumeModalOpen(false)}
-      />
+      {uploadModalOpen && (
+        <ResumeUploadModal onClose={() => setUploadModalOpen(false)} />
+      )}
 
     </div>
   );

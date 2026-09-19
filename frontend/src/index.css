@@ -1,15 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @layer base {
   body {
-    background-color: #FAF8F5;
-    color: #191C1A;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #FAFAFA;
+    color: #09090B;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.011em;
+  }
+
+  ::selection {
+    background-color: #09090B;
+    color: #FFFFFF;
   }
 }
 
 .font-mono {
-  font-family: 'Space Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
 }
