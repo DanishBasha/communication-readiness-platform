@@ -24,40 +24,40 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel = 0.5, siz
       const centerY = canvas.height / 2;
       const baseRadius = size * 0.28;
 
-      phase += 0.04;
+      phase += 0.035;
 
-      // Color Palette based on State
-      let primaryColor = 'rgba(99, 102, 241, '; // Indigo
-      let secondaryColor = 'rgba(56, 189, 248, '; // Sky
-      let glowColor = 'rgba(99, 102, 241, 0.4)';
+      // Color Palette based on Bamboo & Organic Forest Theme
+      let primaryColor = 'rgba(45, 106, 79, '; // Deep Bamboo Jade (#2D6A4F)
+      let secondaryColor = 'rgba(82, 183, 136, '; // Fresh Leaf Green (#52B788)
+      let glowColor = 'rgba(45, 106, 79, 0.25)';
 
       if (state === 'LISTENING') {
-        primaryColor = 'rgba(16, 185, 129, '; // Emerald
-        secondaryColor = 'rgba(52, 211, 153, ';
-        glowColor = 'rgba(16, 185, 129, 0.5)';
+        primaryColor = 'rgba(40, 140, 80, '; // Active Bamboo
+        secondaryColor = 'rgba(116, 198, 157, ';
+        glowColor = 'rgba(40, 140, 80, 0.35)';
       } else if (state === 'THINKING') {
-        primaryColor = 'rgba(245, 158, 11, '; // Amber
-        secondaryColor = 'rgba(251, 191, 36, ';
-        glowColor = 'rgba(245, 158, 11, 0.5)';
+        primaryColor = 'rgba(217, 119, 6, '; // Warm Amber (#D97706)
+        secondaryColor = 'rgba(245, 158, 11, ';
+        glowColor = 'rgba(217, 119, 6, 0.35)';
       } else if (state === 'SPEAKING') {
-        primaryColor = 'rgba(168, 85, 247, '; // Purple
-        secondaryColor = 'rgba(236, 72, 153, ';
-        glowColor = 'rgba(168, 85, 247, 0.5)';
+        primaryColor = 'rgba(25, 28, 26, '; // Deep Charcoal Ink (#191C1A)
+        secondaryColor = 'rgba(45, 106, 79, '; // Bamboo Accent
+        glowColor = 'rgba(25, 28, 26, 0.3)';
       }
 
-      // Outer Pulsing Glow Rings
+      // Outer Gentle Pulsing Wave Rings
       const ringCount = 3;
       for (let i = ringCount; i >= 1; i--) {
-        const expansion = Math.sin(phase + i * 0.8) * 12 * (state === 'SPEAKING' || state === 'LISTENING' ? 1.5 : 0.6);
-        const ringRadius = baseRadius + i * 22 + expansion + (audioLevel * 15);
+        const expansion = Math.sin(phase + i * 0.8) * 10 * (state === 'SPEAKING' || state === 'LISTENING' ? 1.4 : 0.5);
+        const ringRadius = baseRadius + i * 20 + expansion + (audioLevel * 12);
         ctx.beginPath();
         ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
-        ctx.fillStyle = primaryColor + (0.07 / i) + ')';
+        ctx.fillStyle = primaryColor + (0.08 / i) + ')';
         ctx.fill();
       }
 
-      // Main Core Gradient Orb
-      const dynamicRadius = baseRadius + Math.sin(phase * 1.5) * 6 + (audioLevel * 10);
+      // Core Organic Sphere Gradient
+      const dynamicRadius = baseRadius + Math.sin(phase * 1.4) * 5 + (audioLevel * 8);
       const gradient = ctx.createRadialGradient(
         centerX - dynamicRadius * 0.3,
         centerY - dynamicRadius * 0.3,
@@ -67,21 +67,28 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel = 0.5, siz
         dynamicRadius
       );
 
-      gradient.addColorStop(0, '#ffffff');
-      gradient.addColorStop(0.3, secondaryColor + '0.9)');
-      gradient.addColorStop(0.8, primaryColor + '0.95)');
-      gradient.addColorStop(1, primaryColor + '0.3)');
+      if (state === 'SPEAKING') {
+        gradient.addColorStop(0, '#FFFFFF');
+        gradient.addColorStop(0.2, '#E8F5E9');
+        gradient.addColorStop(0.65, '#2D6A4F');
+        gradient.addColorStop(1, '#191C1A');
+      } else {
+        gradient.addColorStop(0, '#FFFFFF');
+        gradient.addColorStop(0.3, secondaryColor + '0.85)');
+        gradient.addColorStop(0.85, primaryColor + '0.95)');
+        gradient.addColorStop(1, primaryColor + '0.4)');
+      }
 
       ctx.save();
-      ctx.shadowBlur = 35;
+      ctx.shadowBlur = 30;
       ctx.shadowColor = glowColor;
 
       ctx.beginPath();
-      // Wave perimeter
-      const points = 32;
+      // Smooth organic perimeter
+      const points = 36;
       for (let j = 0; j <= points; j++) {
         const angle = (j / points) * Math.PI * 2;
-        const wave = Math.sin(angle * 6 + phase * 2) * (state === 'LISTENING' || state === 'SPEAKING' ? 4 : 1.5);
+        const wave = Math.sin(angle * 5 + phase * 2) * (state === 'LISTENING' || state === 'SPEAKING' ? 3.5 : 1.2);
         const r = dynamicRadius + wave;
         const x = centerX + Math.cos(angle) * r;
         const y = centerY + Math.sin(angle) * r;
@@ -104,24 +111,24 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel = 0.5, siz
   }, [state, audioLevel, size]);
 
   return (
-    <div className="flex flex-col items-center justify-center relative">
+    <div className="flex flex-col items-center justify-center relative select-none">
       <canvas 
         ref={canvasRef} 
         width={size} 
         height={size} 
-        className="transition-all duration-300"
+        className="transition-all duration-300 drop-shadow-lg"
       />
-      <div className="mt-3 flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/80 border border-slate-700/60 text-xs font-mono">
-        <span className={`w-2 h-2 rounded-full animate-ping ${
-          state === 'LISTENING' ? 'bg-emerald-400' :
-          state === 'THINKING' ? 'bg-amber-400' :
-          state === 'SPEAKING' ? 'bg-purple-400' : 'bg-slate-400'
+      <div className="mt-4 flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white border border-stone-200 shadow-sm text-xs font-semibold text-stone-700">
+        <span className={`w-2 h-2 rounded-full ${
+          state === 'LISTENING' ? 'bg-emerald-500 animate-ping' :
+          state === 'THINKING' ? 'bg-amber-500 animate-pulse' :
+          state === 'SPEAKING' ? 'bg-stone-900 animate-pulse' : 'bg-stone-300'
         }`} />
-        <span className="text-slate-300">
-          {state === 'LISTENING' && 'Listening to you...'}
-          {state === 'THINKING' && 'AI is formulating response...'}
+        <span>
+          {state === 'LISTENING' && 'Listening to your voice...'}
+          {state === 'THINKING' && 'AI Companion is thinking...'}
           {state === 'SPEAKING' && 'AI Interviewer speaking...'}
-          {state === 'IDLE' && 'Ready'}
+          {state === 'IDLE' && 'Ready when you are'}
         </span>
       </div>
     </div>

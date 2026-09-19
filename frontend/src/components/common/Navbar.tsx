@@ -8,7 +8,6 @@ import {
   Mic2, 
   Briefcase, 
   ChevronDown, 
-  Sparkles,
   ShieldAlert
 } from 'lucide-react';
 
@@ -16,49 +15,49 @@ export const Navbar: React.FC = () => {
   const { activeRole, setActiveRole, student, setActiveView, interviewState } = useApp();
 
   const roleLabels: { [key in UserRole]: { label: string; icon: React.ReactNode; badge: string; color: string } } = {
-    STUDENT: { label: 'Student Portal', icon: <GraduationCap className="w-4 h-4" />, badge: student.track.replace('_', ' '), color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
-    FACULTY_MENTOR: { label: 'Faculty Mentor', icon: <Users className="w-4 h-4" />, badge: '25 Mentees', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
-    PROGRAM_ADMIN: { label: 'Program Admin', icon: <Layers className="w-4 h-4" />, badge: 'HOPE & 21 PEP', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
-    TRAINER: { label: 'Domain Trainer', icon: <Mic2 className="w-4 h-4" />, badge: 'Cloud & DevOps (Active)', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-    PLACEMENT_COORDINATOR: { label: 'Placement Coordinator', icon: <Briefcase className="w-4 h-4" />, badge: 'Super Admin', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
+    STUDENT: { label: 'Student Portal', icon: <GraduationCap className="w-4 h-4" />, badge: student.track.replace('_', ' '), color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+    FACULTY_MENTOR: { label: 'Faculty Mentor', icon: <Users className="w-4 h-4" />, badge: '25 Mentees', color: 'bg-stone-100 text-stone-800 border-stone-300' },
+    PROGRAM_ADMIN: { label: 'Program Admin', icon: <Layers className="w-4 h-4" />, badge: 'HOPE & 21 PEP', color: 'bg-amber-50 text-amber-800 border-amber-200' },
+    TRAINER: { label: 'Domain Trainer', icon: <Mic2 className="w-4 h-4" />, badge: 'Cloud & DevOps (Active)', color: 'bg-teal-50 text-teal-800 border-teal-200' },
+    PLACEMENT_COORDINATOR: { label: 'Placement Coordinator', icon: <Briefcase className="w-4 h-4" />, badge: 'Super Admin', color: 'bg-stone-900 text-white border-stone-800' },
   };
 
   return (
-    <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40">
+    <header className="border-b border-stone-200/80 bg-[#FAF8F5]/90 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
-        {/* Left: Brand / College Title */}
+        {/* Brand Logo with friendly mascot badge */}
         <div 
           className="flex items-center gap-3 cursor-pointer group"
           onClick={() => setActiveView('DASHBOARD')}
         >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 p-[1px] shadow-lg shadow-indigo-500/25">
-            <div className="w-full h-full bg-slate-950 rounded-[11px] flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-indigo-400 group-hover:rotate-12 transition-transform duration-300" />
-            </div>
+          <div className="w-10 h-10 rounded-2xl bg-[#191C1A] flex items-center justify-center text-white shadow-md shadow-stone-900/10 group-hover:scale-105 transition-transform duration-200">
+            <span className="text-xl select-none">🐼</span>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold tracking-tight text-white text-base sm:text-lg">CampusReadiness</span>
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">College Ed.</span>
+              <span className="font-extrabold tracking-tight text-stone-900 text-base sm:text-lg">CampusReadiness</span>
+              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                Bamboo Ed.
+              </span>
             </div>
-            <p className="text-xs text-slate-400 hidden sm:block">AI Communication & Interview Readiness</p>
+            <p className="text-xs text-stone-500 hidden sm:block">AI Mock Interview & Communication Companion</p>
           </div>
         </div>
 
-        {/* Right: Active Role Switcher Preview Bar */}
+        {/* Right Role Switcher */}
         <div className="flex items-center gap-3">
           {interviewState.isActive && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs animate-pulse">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>Proctored Session in Progress</span>
+            <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold animate-pulse">
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+              <span>Proctored Session Active</span>
             </div>
           )}
 
           <div className="relative">
-            <div className="flex items-center gap-2 bg-slate-800/80 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-inner">
-              <span className="text-xs text-slate-400 hidden lg:inline">Simulated Role:</span>
-              <div className="flex items-center gap-2 text-sm font-medium text-white">
+            <div className="flex items-center gap-2 bg-white border border-stone-300/80 rounded-2xl px-3.5 py-1.5 shadow-sm hover:border-stone-400 transition">
+              <span className="text-xs text-stone-400 hidden lg:inline">Role:</span>
+              <div className="flex items-center gap-2 text-sm font-semibold text-stone-800">
                 {roleLabels[activeRole].icon}
                 <span>{roleLabels[activeRole].label}</span>
               </div>
@@ -75,11 +74,11 @@ export const Navbar: React.FC = () => {
                 <option value="TRAINER">Visiting Trainer Portal</option>
                 <option value="PLACEMENT_COORDINATOR">Placement Coordinator Portal</option>
               </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none" />
+              <ChevronDown className="w-4 h-4 text-stone-500 pointer-events-none" />
             </div>
           </div>
 
-          <div className={`hidden sm:inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-lg border ${roleLabels[activeRole].color}`}>
+          <div className={`hidden sm:inline-flex items-center text-xs font-bold px-3 py-1 rounded-full border shadow-sm ${roleLabels[activeRole].color}`}>
             {roleLabels[activeRole].badge}
           </div>
         </div>

@@ -3,11 +3,6 @@ import { useApp } from '../../context/AppContext';
 import { 
   Users, 
   CheckCircle2, 
-  Clock, 
-  ExternalLink, 
-  Award, 
-  TrendingUp,
-  FileCheck2,
   ShieldCheck
 } from 'lucide-react';
 import { MOCK_MENTEES_LIST } from '../../data/mockData';
@@ -16,65 +11,67 @@ export const FacultyMentorPortal: React.FC = () => {
   const { student, verifyCriteriaTask } = useApp();
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 text-stone-900">
       
       {/* Mentor Header */}
-      <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="bg-white border border-stone-200/90 rounded-[32px] p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <span className="text-xs font-mono uppercase font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+          <span className="text-xs font-mono uppercase font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-200">
             Faculty Mentor Portal (Under Placement Coordinator)
           </span>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mt-1">Assigned Mentees Progress & Sign-off</h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+          <h1 className="text-2xl sm:text-3xl font-black text-stone-900 mt-2">Assigned Mentees Progress & Sign-off</h1>
+          <p className="text-xs sm:text-sm text-stone-500 mt-1">
             Supervising 25 assigned students across HOPE Elite, PEP, and Department streams. Verify placement criteria tasks below.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-2xl border border-slate-800 text-xs text-slate-300">
-          <Users className="w-4 h-4 text-emerald-400" />
-          <span>Assigned Mentees: <strong className="text-white font-mono">25 Students</strong></span>
+        <div className="flex items-center gap-3 bg-stone-50 p-4 rounded-2xl border border-stone-200 text-xs text-stone-700">
+          <Users className="w-5 h-5 text-emerald-700" />
+          <span>Assigned Mentees: <strong className="text-stone-900 font-mono text-sm">25 Students</strong></span>
         </div>
       </div>
 
       {/* Mentees Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+      <div className="bg-white border border-stone-200/90 rounded-[28px] p-7 sm:p-8 shadow-sm space-y-4">
         
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="flex items-center justify-between pb-3 border-b border-stone-100">
           <div>
-            <h3 className="text-base font-bold text-white">Mentees Roster</h3>
-            <p className="text-xs text-slate-400">Click to view diagnostic scorecards and sign off on verified criteria tasks.</p>
+            <h3 className="text-lg font-bold text-stone-900">Mentees Roster</h3>
+            <p className="text-xs text-stone-500">Click to review diagnostic scores and stamp verified checklist milestones.</p>
           </div>
-          <span className="text-xs font-mono text-emerald-400">Academic Term 2026</span>
+          <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+            Term 2026 Active
+          </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-950 text-slate-400 uppercase font-mono text-[11px] border-y border-slate-800">
+        <div className="overflow-x-auto pt-2">
+          <table className="w-full text-left text-xs text-stone-700">
+            <thead className="bg-stone-50 text-stone-500 uppercase font-mono text-[11px] border-y border-stone-200">
               <tr>
-                <th className="p-3">Student Name</th>
-                <th className="p-3">Roll No</th>
-                <th className="p-3">Track</th>
-                <th className="p-3">Domain</th>
-                <th className="p-3">Mock Score</th>
-                <th className="p-3">Checklist Verified</th>
-                <th className="p-3 text-right">Actions</th>
+                <th className="p-3.5 font-bold">Student Name</th>
+                <th className="p-3.5 font-bold">Roll No</th>
+                <th className="p-3.5 font-bold">Track</th>
+                <th className="p-3.5 font-bold">Domain</th>
+                <th className="p-3.5 font-bold">Mock Score</th>
+                <th className="p-3.5 font-bold">Checklist</th>
+                <th className="p-3.5 font-bold text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/80">
+            <tbody className="divide-y divide-stone-100">
               {MOCK_MENTEES_LIST.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-800/40 transition">
-                  <td className="p-3 font-semibold text-white">{m.name}</td>
-                  <td className="p-3 font-mono text-slate-400">{m.rollNumber}</td>
-                  <td className="p-3">
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[11px]">
+                <tr key={m.id} className="hover:bg-stone-50 transition">
+                  <td className="p-3.5 font-bold text-stone-900">{m.name}</td>
+                  <td className="p-3.5 font-mono text-stone-500">{m.rollNumber}</td>
+                  <td className="p-3.5">
+                    <span className="px-2.5 py-1 rounded-full bg-stone-100 text-stone-800 font-mono text-[11px] font-semibold border border-stone-200">
                       {m.track.replace('_', ' ')}
                     </span>
                   </td>
-                  <td className="p-3 text-slate-300">{m.domain}</td>
-                  <td className="p-3 font-bold font-mono text-emerald-400">{m.score}%</td>
-                  <td className="p-3 font-mono text-slate-400">{m.checklist}</td>
-                  <td className="p-3 text-right">
-                    <button className="text-xs px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+                  <td className="p-3.5 text-stone-600 font-medium">{m.domain}</td>
+                  <td className="p-3.5 font-black font-mono text-emerald-700">{m.score}%</td>
+                  <td className="p-3.5 font-mono text-stone-500">{m.checklist}</td>
+                  <td className="p-3.5 text-right">
+                    <button className="text-xs font-bold px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-200 transition">
                       Review Tasks
                     </button>
                   </td>
@@ -86,42 +83,42 @@ export const FacultyMentorPortal: React.FC = () => {
 
       </div>
 
-      {/* Active Mentee Criteria Verification Card (Aravind Kumar) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      {/* Active Mentee Criteria Verification Card */}
+      <div className="bg-white border border-stone-200/90 rounded-[28px] p-7 sm:p-8 shadow-sm space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-stone-100">
           <div>
-            <h3 className="text-base font-bold text-white">Criteria Task Verification: {student.name} ({student.rollNumber})</h3>
-            <p className="text-xs text-slate-400">Review student-completed milestones and stamp verified sign-offs.</p>
+            <h3 className="text-lg font-bold text-stone-900">Task Verification: {student.name} ({student.rollNumber})</h3>
+            <p className="text-xs text-stone-500">Sign off on completed placement requirements.</p>
           </div>
-          <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+          <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
             HOPE Elite Mentee
           </span>
         </div>
 
         <div className="space-y-3 pt-2">
           {student.criteriaTasks.map((t) => (
-            <div key={t.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+            <div key={t.id} className="p-5 rounded-2xl bg-stone-50 border border-stone-200 flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h4 className="text-xs font-semibold text-white">{t.title}</h4>
+                  <h4 className="text-xs sm:text-sm font-bold text-stone-900">{t.title}</h4>
                   {t.isCompleted ? (
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono">Student Marked Done</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">Student Completed</span>
                   ) : (
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">Pending Student</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-200 text-stone-700 font-mono">Pending Student</span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">{t.description}</p>
+                <p className="text-xs text-stone-500 mt-1">{t.description}</p>
               </div>
 
               {t.verifiedByMentor ? (
-                <span className="flex items-center gap-1 text-xs font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-xl border border-emerald-500/20">
-                  <ShieldCheck className="w-4 h-4" /> Verified
+                <span className="flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-800 bg-emerald-100 px-3.5 py-1.5 rounded-full border border-emerald-200">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" /> Verified
                 </span>
               ) : (
                 <button
                   disabled={!t.isCompleted}
                   onClick={() => verifyCriteriaTask(t.id)}
-                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition"
+                  className="px-5 py-2 rounded-xl bg-[#191C1A] hover:bg-stone-800 disabled:opacity-40 text-white text-xs font-bold shadow-sm transition"
                 >
                   Verify & Sign-off
                 </button>

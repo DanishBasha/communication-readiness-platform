@@ -1,18 +1,14 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
-  Award, 
-  CheckCircle2, 
-  AlertCircle, 
-  TrendingUp, 
-  Zap, 
   ArrowLeft, 
-  Share2, 
-  BookOpen, 
   Mic2,
   Activity,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  Zap,
+  TrendingUp,
+  AlertCircle
 } from 'lucide-react';
 
 export const DiagnosticReportView: React.FC = () => {
@@ -20,11 +16,11 @@ export const DiagnosticReportView: React.FC = () => {
 
   if (!latestReport) {
     return (
-      <div className="p-8 text-center text-slate-400">
+      <div className="p-8 text-center text-stone-500">
         <p>No assessment report found. Complete a mock interview first.</p>
         <button 
           onClick={() => setActiveView('DASHBOARD')}
-          className="mt-4 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-medium"
+          className="mt-4 px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-bold"
         >
           Return to Dashboard
         </button>
@@ -39,15 +35,15 @@ export const DiagnosticReportView: React.FC = () => {
       <div className="flex items-center justify-between">
         <button 
           onClick={() => setActiveView('DASHBOARD')}
-          className="flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 transition"
+          className="flex items-center gap-2 text-xs font-bold text-stone-700 hover:text-stone-900 px-4 py-2.5 rounded-xl bg-white border border-stone-200 shadow-2xs transition"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Return to Dashboard</span>
         </button>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 font-mono">Session: #{latestReport.id}</span>
-          <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono">
+          <span className="text-xs text-stone-500 font-mono">Session #{latestReport.id}</span>
+          <span className="text-xs px-3 py-1 rounded-full bg-stone-100 border border-stone-200 text-stone-800 font-mono font-semibold">
             {latestReport.date}
           </span>
         </div>
@@ -56,185 +52,181 @@ export const DiagnosticReportView: React.FC = () => {
       {/* Proctoring Verification Pill Banner */}
       <div className={`p-4 rounded-2xl border flex items-center justify-between ${
         latestReport.isFlagged 
-          ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' 
-          : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+          ? 'bg-rose-50 border-rose-200 text-rose-900' 
+          : 'bg-emerald-50 border-emerald-200 text-emerald-900'
       }`}>
         <div className="flex items-center gap-3">
           {latestReport.isFlagged ? (
-            <AlertTriangle className="w-5 h-5 text-rose-400" />
+            <AlertTriangle className="w-5 h-5 text-rose-600" />
           ) : (
-            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            <ShieldCheck className="w-5 h-5 text-emerald-600" />
           )}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider">
-              {latestReport.isFlagged ? 'Proctoring Flagged: Multiple Tab Switches' : 'Proctored Session Verified Clean'}
+              {latestReport.isFlagged ? 'Proctoring Flagged: Tab Switch Overuse' : 'Proctored Session Verified Clean'}
             </h4>
             <p className="text-xs opacity-90">
-              {latestReport.tabSwitches} tab switch events logged during interview.
+              {latestReport.tabSwitches} tab switch events recorded.
             </p>
           </div>
         </div>
-        <span className="text-xs font-mono px-3 py-1 rounded-lg bg-slate-950/60 border border-current">
-          Audit ID: PR-{latestReport.id.toUpperCase()}
+        <span className="text-xs font-mono font-bold px-3 py-1 rounded-lg bg-white border border-current shadow-2xs">
+          Audit: PR-{latestReport.id.toUpperCase()}
         </span>
       </div>
 
       {/* Hero Scorecard Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Main Scorecard */}
-        <div className="bg-gradient-to-br from-indigo-950/60 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute -right-8 -top-8 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+        {/* Main Scorecard (Bold Black & White with Jade) */}
+        <div className="bg-[#181C19] text-white border border-stone-800 rounded-[32px] p-8 shadow-xl flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute -right-8 -top-8 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
 
           <div>
-            <span className="text-xs font-mono font-semibold text-indigo-400 uppercase tracking-wider block mb-1">
-              Diagnostic Result
+            <span className="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider block mb-1">
+              Assessment Diagnostic
             </span>
-            <h2 className="text-xl font-bold text-white">Placement Readiness Score</h2>
-            <p className="text-xs text-slate-400 mt-1">Weighted composite of Technical Depth (70%) and Spoken Delivery (30%).</p>
+            <h2 className="text-2xl font-black text-white">Placement Readiness Score</h2>
+            <p className="text-xs text-stone-300 mt-1">Weighted composite of Technical Depth (70%) and Spoken Delivery (30%).</p>
           </div>
 
           <div className="my-6 flex items-baseline gap-2">
-            <span className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-200 to-indigo-400 font-mono">
+            <span className="text-6xl font-black text-white font-mono">
               {latestReport.overallScore}
             </span>
-            <span className="text-xl font-semibold text-slate-500">/100</span>
-            <span className={`ml-3 text-xs font-semibold px-2.5 py-1 rounded-full border ${
-              latestReport.overallScore >= 80 
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-            }`}>
+            <span className="text-xl font-semibold text-stone-400">/100</span>
+            <span className="ml-3 text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               {latestReport.overallScore >= 80 ? 'Placement Ready' : 'Training Recommended'}
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-800/80">
-            <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800">
-              <span className="text-[11px] text-slate-400 block">Technical Score</span>
-              <span className="text-lg font-bold text-indigo-300 font-mono">{latestReport.technicalScore}%</span>
+          <div className="grid grid-cols-2 gap-3 pt-4 border-t border-stone-800">
+            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/10">
+              <span className="text-[11px] text-stone-300 block">Technical Depth</span>
+              <span className="text-xl font-extrabold text-emerald-300 font-mono">{latestReport.technicalScore}%</span>
             </div>
-            <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800">
-              <span className="text-[11px] text-slate-400 block">Communication</span>
-              <span className="text-lg font-bold text-emerald-300 font-mono">{latestReport.communicationScore}%</span>
+            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/10">
+              <span className="text-[11px] text-stone-300 block">Communication</span>
+              <span className="text-xl font-extrabold text-stone-200 font-mono">{latestReport.communicationScore}%</span>
             </div>
           </div>
         </div>
 
         {/* Communication Diagnostic Center */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col justify-between">
+        <div className="lg:col-span-2 bg-white border border-stone-200/90 rounded-[32px] p-7 sm:p-8 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
-                <Mic2 className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Speech & Acoustic Diagnostics</h3>
+                <Mic2 className="w-5 h-5 text-emerald-700" />
+                <h3 className="text-lg font-extrabold text-stone-900">Speech & Acoustic Diagnostics</h3>
               </div>
-              <span className="text-xs text-slate-400 font-mono">Transient Analysis Complete</span>
+              <span className="text-xs text-stone-400 font-mono">Transient Analysis Done</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               
-              {/* WPM Pace Meter */}
-              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+              {/* Speaking Pace */}
+              <div className="bg-stone-50 p-5 rounded-2xl border border-stone-200">
+                <div className="flex items-center justify-between text-xs text-stone-500 mb-2 font-medium">
                   <span>Speaking Pace</span>
-                  <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                  <Activity className="w-3.5 h-3.5 text-emerald-600" />
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-3xl font-extrabold text-white font-mono">{latestReport.averageWpm}</span>
-                  <span className="text-xs text-slate-500">WPM</span>
+                  <span className="text-3xl font-black text-stone-900 font-mono">{latestReport.averageWpm}</span>
+                  <span className="text-xs text-stone-500">WPM</span>
                 </div>
-                <div className="w-full bg-slate-800 rounded-full h-1.5 my-2.5">
+                <div className="w-full bg-stone-200 rounded-full h-2 my-2.5">
                   <div 
-                    className="bg-indigo-500 h-1.5 rounded-full" 
+                    className="bg-emerald-600 h-2 rounded-full" 
                     style={{ width: `${Math.min(100, (latestReport.averageWpm / 160) * 100)}%` }}
                   />
                 </div>
-                <span className="text-[11px] text-emerald-400 font-medium">
-                  Optimal range: 120–150 WPM
+                <span className="text-[11px] text-emerald-700 font-bold">
+                  Optimal: 120–150 WPM
                 </span>
               </div>
 
               {/* Filler Words */}
-              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+              <div className="bg-stone-50 p-5 rounded-2xl border border-stone-200">
+                <div className="flex items-center justify-between text-xs text-stone-500 mb-2 font-medium">
                   <span>Filler Words</span>
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-3xl font-extrabold text-amber-400 font-mono">{latestReport.totalFillerWords}</span>
-                  <span className="text-xs text-slate-500">used</span>
+                  <span className="text-3xl font-black text-amber-700 font-mono">{latestReport.totalFillerWords}</span>
+                  <span className="text-xs text-stone-500">used</span>
                 </div>
                 <div className="flex flex-wrap gap-1 mt-2.5">
                   {Object.entries(latestReport.fillerWordBreakdown).map(([word, count]) => (
-                    <span key={word} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono">
+                    <span key={word} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-mono">
                       "{word}" ({count})
                     </span>
                   ))}
                 </div>
               </div>
 
-              {/* Delivery & Clarity */}
-              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                  <span>Delivery Confidence</span>
-                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+              {/* Delivery Confidence */}
+              <div className="bg-stone-50 p-5 rounded-2xl border border-stone-200">
+                <div className="flex items-center justify-between text-xs text-stone-500 mb-2 font-medium">
+                  <span>Vocal Confidence</span>
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-3xl font-extrabold text-emerald-400 font-mono">88%</span>
-                  <span className="text-xs text-slate-500">vocal clarity</span>
+                  <span className="text-3xl font-black text-emerald-700 font-mono">88%</span>
+                  <span className="text-xs text-stone-500">clarity</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-2.5 leading-snug">
-                  Low sentence breaking; structured thought delivery maintained across turns.
+                <p className="text-[11px] text-stone-500 mt-2 leading-snug">
+                  Structured sentence flow; steady voice pitch maintained.
                 </p>
               </div>
 
             </div>
           </div>
 
-          <div className="mt-4 p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs text-slate-300">
-            <span>Trainer Tip: Aim to replace filler word 'uh' with deliberate micro-pauses (silent 1-second breath).</span>
+          <div className="mt-4 p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-900 font-medium">
+            <span>Coach Note: Practice silent pauses (1-second deep breath) to eliminate residual 'uh' filler habits.</span>
           </div>
         </div>
 
       </div>
 
-      {/* Granular Skill-by-Skill Proficiency Breakdown */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+      {/* Granular Skill-by-Skill Breakdown */}
+      <div className="bg-white border border-stone-200/90 rounded-[32px] p-7 sm:p-8 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-base font-bold text-white">Technical Domain Competency Breakdown</h3>
-            <p className="text-xs text-slate-400">Evaluated against your uploaded resume projects and technical context.</p>
+            <h3 className="text-lg font-extrabold text-stone-900">Technical Competency Matrix</h3>
+            <p className="text-xs text-stone-500">Grounded in your uploaded resume projects and technical claims.</p>
           </div>
-          <span className="text-xs text-slate-400 font-mono">Resume-Grounded Matrix</span>
+          <span className="text-xs font-mono text-stone-400 font-bold">Resume Verification</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
           {latestReport.skillBreakdown.map((item, idx) => (
-            <div key={idx} className="bg-slate-950 p-4 rounded-2xl border border-slate-800/90 space-y-2">
+            <div key={idx} className="bg-stone-50 p-5 rounded-2xl border border-stone-200 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-white">{item.skill}</span>
-                <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-lg border ${
+                <span className="text-sm font-bold text-stone-900">{item.skill}</span>
+                <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-full border ${
                   item.status === 'STRONG' 
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                     : item.status === 'MODERATE'
-                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                    : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                    ? 'bg-amber-100 text-amber-800 border-amber-200'
+                    : 'bg-rose-100 text-rose-800 border-rose-200'
                 }`}>
                   {item.score}% · {item.status.replace('_', ' ')}
                 </span>
               </div>
 
-              <div className="w-full bg-slate-800 rounded-full h-1.5">
+              <div className="w-full bg-stone-200 rounded-full h-2">
                 <div 
-                  className={`h-1.5 rounded-full ${
-                    item.status === 'STRONG' ? 'bg-emerald-400' :
-                    item.status === 'MODERATE' ? 'bg-amber-400' : 'bg-rose-400'
+                  className={`h-2 rounded-full ${
+                    item.status === 'STRONG' ? 'bg-emerald-600' :
+                    item.status === 'MODERATE' ? 'bg-amber-500' : 'bg-rose-500'
                   }`}
                   style={{ width: `${item.score}%` }}
                 />
               </div>
 
-              <p className="text-xs text-slate-400 pt-1">
+              <p className="text-xs text-stone-600 pt-1">
                 {item.recommendation}
               </p>
             </div>
@@ -242,20 +234,20 @@ export const DiagnosticReportView: React.FC = () => {
         </div>
       </div>
 
-      {/* Actionable Next Steps ("What to do next") */}
-      <div className="bg-gradient-to-br from-slate-900 to-indigo-950/40 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+      {/* Actionable Self-Improvement Roadmap */}
+      <div className="bg-white border border-stone-200/90 rounded-[32px] p-7 sm:p-8 shadow-sm space-y-4">
         <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-amber-400" />
-          <h3 className="text-base font-bold text-white">Personalized Self-Improvement Roadmap</h3>
+          <Zap className="w-5 h-5 text-amber-600" />
+          <h3 className="text-lg font-extrabold text-stone-900">Personalized Self-Improvement Roadmap</h3>
         </div>
 
         <div className="space-y-3">
           {latestReport.actionableNextSteps.map((step, idx) => (
-            <div key={idx} className="flex items-start gap-3 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800/80">
-              <div className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+            <div key={idx} className="flex items-start gap-3.5 bg-stone-50 p-4 rounded-2xl border border-stone-200">
+              <div className="w-6 h-6 rounded-full bg-[#191C1A] text-white flex items-center justify-center text-xs font-black shrink-0 mt-0.5">
                 {idx + 1}
               </div>
-              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+              <p className="text-xs sm:text-sm text-stone-800 leading-relaxed font-medium">
                 {step}
               </p>
             </div>
