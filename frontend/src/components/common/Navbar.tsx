@@ -18,7 +18,7 @@ export const Navbar: React.FC = () => {
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
 
   const roles: { role: UserRole; label: string; icon: React.ReactNode; badge: string }[] = [
-    { role: 'STUDENT', label: 'Student Portal', icon: <User className="w-4 h-4" />, badge: student.name },
+    { role: 'STUDENT', label: 'Student Portal', icon: <User className="w-4 h-4" />, badge: student?.name || 'Aravind Kumar' },
     { role: 'FACULTY_MENTOR', label: 'Faculty Mentor', icon: <GraduationCap className="w-4 h-4" />, badge: 'Dr. Ranganathan (25 Mentees)' },
     { role: 'PROGRAM_ADMIN', label: 'Program Admin', icon: <Layers className="w-4 h-4" />, badge: 'HOPE / 21 PEP Domains' },
     { role: 'TRAINER', label: 'Domain Trainer', icon: <Sparkles className="w-4 h-4" />, badge: '10-15 Day Active Tenure' },
@@ -64,7 +64,7 @@ export const Navbar: React.FC = () => {
             {activeRole === 'STUDENT' && (
               <div className="hidden sm:flex items-center space-x-2 bg-neutral-50 border border-neutral-200/80 px-2.5 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-xs font-medium text-neutral-700">{student.track}</span>
+                <span className="text-xs font-medium text-neutral-700">{student?.track || 'HOPE_ELITE'}</span>
               </div>
             )}
 
@@ -125,7 +125,7 @@ export const Navbar: React.FC = () => {
 
             <div className="flex items-center pl-1">
               <div className="w-8 h-8 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center text-xs font-semibold text-neutral-800">
-                {student.name.split(' ').map((n: string) => n[0]).join('')}
+                {(student?.name || 'Aravind Kumar').split(' ').map((n: string) => n[0]).join('')}
               </div>
             </div>
 
