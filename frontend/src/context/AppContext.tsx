@@ -16,8 +16,11 @@ import {
   MOCK_ASSIGNMENTS 
 } from '../data/mockData';
 
+const BACKEND_API_BASE = 'http://localhost:5000/api';
+
 interface InterviewSessionState {
   isActive: boolean;
+  sessionId?: string;
   type: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION';
   turnIndex: number;
   currentDifficulty: Difficulty;
@@ -73,9 +76,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     liveTranscript: ''
   });
 
-  // Handle Tab switches when in interview room
+  // Handle Tab switches when in interview room with proctor audit sync
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (document.hidden && interviewState.isActive) {
         setInterviewState(prev => {
           const newSwitches = prev.tabSwitches + 1;
@@ -86,14 +89,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isFlagged: flagged
           };
         });
+
+        if (interviewState.sessionId) {
+          try {
+            await fetch(`${BACKEND_API_BASE}/interview/proctor-event`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId: interviewState.sessionId })
+            });
+          } catch {
+            // Offline fallback
+          }
+        }
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [interviewState.isActive]);
+  }, [interviewState.isActive, interviewState.sessionId]);
 
-  const startInterview = (type: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION' = 'MOCK_INTERVIEW') => {
+  const startInterview = async (type: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION' = 'MOCK_INTERVIEW') => {
+    setActiveView(type === 'MOCK_INTERVIEW' ? 'INTERVIEW_ROOM' : 'LISTENING_ROOM');
+
+    try {
+      const res = await fetch(`${BACKEND_API_BASE}/interview/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, candidateId: student.id })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const serverSession = data.session;
+        setInterviewState({
+          isActive: true,
+          sessionId: serverSession.id,
+          type,
+          turnIndex: 0,
+          currentDifficulty: (serverSession.currentDifficulty as Difficulty) || 'EASY',
+          questions: serverSession.questions.map((q: any) => ({
+            id: q.id,
+            questionNumber: q.questionNumber,
+            questionText: q.questionText,
+            difficulty: q.difficulty as Difficulty
+          })),
+          tabSwitches: 0,
+          isFlagged: false,
+          orbState: 'SPEAKING',
+          liveTranscript: ''
+        });
+        return;
+      }
+    } catch {
+      console.warn('[AppContext] Node backend unreachable; using local session state.');
+    }
+
+    // Fallback if backend is not reachable
     setInterviewState({
       isActive: true,
       type,
@@ -105,10 +156,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orbState: 'SPEAKING',
       liveTranscript: ''
     });
-    setActiveView(type === 'MOCK_INTERVIEW' ? 'INTERVIEW_ROOM' : 'LISTENING_ROOM');
   };
 
-  const submitAnswer = (answerText: string) => {
+  const submitAnswer = async (answerText: string) => {
+    setInterviewState(prev => ({ ...prev, orbState: 'THINKING' }));
+
+    if (interviewState.sessionId) {
+      try {
+        const res = await fetch(`${BACKEND_API_BASE}/interview/submit-turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: interviewState.sessionId,
+            answerText
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+
+          if (data.concluded && data.report) {
+            setLatestReport(data.report);
+            setStudent(prev => ({
+              ...prev,
+              recentReports: [data.report, ...prev.recentReports]
+            }));
+            setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
+            setActiveView('REPORT_VIEW');
+            return;
+          }
+
+          if (data.nextQuestion) {
+            setInterviewState(prev => {
+              const updatedQuestions = [...prev.questions];
+              updatedQuestions[prev.turnIndex] = {
+                ...updatedQuestions[prev.turnIndex],
+                studentAnswer: answerText,
+                technicalScore: data.evaluation.technical_score,
+                communicationScore: data.evaluation.communication_score,
+                wpm: data.evaluation.words_per_minute,
+                fillerWords: data.evaluation.total_fillers,
+                feedback: data.evaluation.feedback,
+                strengths: data.evaluation.strengths,
+                weaknesses: data.evaluation.weaknesses
+              };
+
+              const nextQ: QuestionTurn = {
+                id: data.nextQuestion.id,
+                questionNumber: data.nextQuestion.questionNumber,
+                questionText: data.nextQuestion.questionText,
+                difficulty: data.nextQuestion.difficulty as Difficulty
+              };
+
+              return {
+                ...prev,
+                turnIndex: prev.turnIndex + 1,
+                currentDifficulty: data.nextQuestion.difficulty as Difficulty,
+                questions: [...updatedQuestions, nextQ],
+                orbState: 'SPEAKING',
+                liveTranscript: ''
+              };
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[AppContext] Submit turn failed via backend; using local evaluator.');
+      }
+    }
+
+    // Local in-memory advance fallback
     setInterviewState(prev => {
       const currentQ = prev.questions[prev.turnIndex];
       const updatedQ: QuestionTurn = {
@@ -124,7 +241,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updatedQuestions = [...prev.questions];
       updatedQuestions[prev.turnIndex] = updatedQ;
 
-      // Adapt difficulty
       let nextDifficulty: Difficulty = prev.currentDifficulty;
       if (prev.currentDifficulty === 'EASY') nextDifficulty = 'MEDIUM';
       else if (prev.currentDifficulty === 'MEDIUM') nextDifficulty = 'ADVANCED';
@@ -132,7 +248,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const nextTurn = prev.turnIndex + 1;
 
       if (nextTurn >= prev.questions.length) {
-        // Conclude interview
         setTimeout(() => endInterview(), 500);
         return prev;
       }
@@ -149,15 +264,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const endInterview = () => {
-    // Generate new diagnostic report
     const newReport: DiagnosticReport = {
       id: `rep-${Date.now().toString().slice(-4)}`,
       date: new Date().toISOString().split('T')[0],
       sessionType: interviewState.type,
-      overallScore: Math.floor(Math.random() * 15) + 78, // 78-92
-      technicalScore: Math.floor(Math.random() * 12) + 82, // 82-94
-      communicationScore: Math.floor(Math.random() * 14) + 72, // 72-86
-      averageWpm: Math.floor(Math.random() * 20) + 120, // 120-140
+      overallScore: Math.floor(Math.random() * 15) + 78,
+      technicalScore: Math.floor(Math.random() * 12) + 82,
+      communicationScore: Math.floor(Math.random() * 14) + 72,
+      averageWpm: Math.floor(Math.random() * 20) + 120,
       totalFillerWords: Math.floor(Math.random() * 8) + 4,
       fillerWordBreakdown: { 'uh': 4, 'um': 3, 'like': 2, 'actually': 1 },
       skillBreakdown: [
@@ -214,13 +328,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAssignments(prev => [newAsg, ...prev]);
   };
 
-  const toggleCriteriaTask = (taskId: string) => {
+  const toggleCriteriaTask = async (taskId: string) => {
     setStudent(prev => ({
       ...prev,
       criteriaTasks: prev.criteriaTasks.map(t => 
         t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t
       )
     }));
+
+    try {
+      await fetch(`${BACKEND_API_BASE}/students/criteria/${taskId}`, { method: 'PATCH' });
+    } catch {
+      // Offline fallback
+    }
   };
 
   const verifyCriteriaTask = (taskId: string) => {
@@ -232,11 +352,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const uploadResumeData = (resume: ParsedResume) => {
-    setStudent(prev => ({
-      ...prev,
-      resume
-    }));
+  const uploadResumeData = async (resume: ParsedResume) => {
+    setStudent(prev => ({ ...prev, resume }));
+    try {
+      await fetch(`${BACKEND_API_BASE}/students/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resume })
+      });
+    } catch {
+      // Offline fallback
+    }
   };
 
   return (
