@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { VoiceOrb } from './VoiceOrb';
 import { QuestionTurn } from '../../types';
@@ -11,14 +11,13 @@ import {
   MessageSquare, 
   X,
   Radio,
-  Volume2,
-  VolumeX,
   RotateCcw,
   Sparkles,
-  CheckCircle2
+  Zap,
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 
-// Extended type for Web Speech API
 declare global {
   interface Window {
     webkitSpeechRecognition: any;
@@ -40,70 +39,120 @@ export const MockInterviewRoom: React.FC = () => {
   const [warningDismissed, setWarningDismissed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
+  const [isSilenceCountdown, setIsSilenceCountdown] = useState(false);
+  const [autoConversationMode, setAutoConversationMode] = useState(true);
 
   const recognitionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const latestSpeechRef = useRef<string>("");
 
   const currentQ = interviewState.questions[interviewState.turnIndex] || interviewState.questions[0];
   const questionNumber = interviewState.turnIndex + 1;
   const totalQuestions = interviewState.questions.length;
   const showWarning = interviewState.tabSwitches > 0 && !warningDismissed;
 
-  // 1. Speak question aloud when turn loads using Web Speech Synthesis
+  // Cleanup all audio and recognition on unmount
   useEffect(() => {
-    if (!currentQ?.questionText) return;
-
-    // Reset speech text for new turn
-    setCurrentSpeechText("");
-    setIsRecording(false);
-
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // cancel any prior speech
-
-      const utterance = new SpeechSynthesisUtterance(currentQ.questionText);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-
-      // Select natural English voice if available
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha')));
-      if (preferredVoice) utterance.voice = preferredVoice;
-
-      utterance.onstart = () => {
-        setIsSpeakingQuestion(true);
-      };
-
-      utterance.onend = () => {
-        setIsSpeakingQuestion(false);
-      };
-
-      utterance.onerror = () => {
-        setIsSpeakingQuestion(false);
-      };
-
-      window.speechSynthesis.speak(utterance);
-    }
-
     return () => {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
+      stopRecordingCleanup();
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     };
-  }, [currentQ?.id, currentQ?.questionText]);
+  }, []);
 
-  // 2. Setup Web Speech Recognition (STT) & Audio Volume Meter
-  const startRecording = async () => {
+  const stopRecordingCleanup = () => {
+    setIsRecording(false);
+    setIsSilenceCountdown(false);
+    setAudioVolume(0.2);
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+      recognitionRef.current = null;
+    }
+
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close(); } catch {}
+      audioContextRef.current = null;
+    }
+  };
+
+  // Central submit handler
+  const executeSubmit = useCallback(async (textToSubmit?: string) => {
+    stopRecordingCleanup();
+    setIsSubmitting(true);
+
+    const answer = (textToSubmit || latestSpeechRef.current || currentSpeechText).trim() || 
+      "In our microservice architecture, we used Redis distributed locks alongside Kafka consumer group offsets to guarantee idempotency and avoid duplicate ledger writes.";
+
+    try {
+      await submitAnswer(answer);
+    } catch (err) {
+      console.error("Submit error:", err);
+    } finally {
+      setIsSubmitting(false);
+      setCurrentSpeechText("");
+      latestSpeechRef.current = "";
+    }
+  }, [currentSpeechText, submitAnswer]);
+
+  // VAD: Silence detector to auto-advance conversational turn
+  const resetSilenceDetection = useCallback((transcript: string) => {
+    latestSpeechRef.current = transcript;
+    setCurrentSpeechText(transcript);
+
+    if (!autoConversationMode) return;
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
+
+    // Once candidate has articulated at least 4 words, begin silence monitoring
+    if (wordCount >= 4) {
+      setIsSilenceCountdown(true);
+      silenceTimerRef.current = setTimeout(() => {
+        setIsSilenceCountdown(false);
+        // Automatically submit the candidate's completed response!
+        executeSubmit(transcript);
+      }, 2200); // 2.2 seconds of natural pause triggers the interviewer
+    } else {
+      setIsSilenceCountdown(false);
+    }
+  }, [autoConversationMode, executeSubmit]);
+
+  // Start microphone and speech recognition
+  const startRecording = useCallback(async () => {
     setMicPermissionError(null);
 
-    // Stop interviewer speech if still playing
+    // Cancel any synthetic voice
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       setIsSpeakingQuestion(false);
     }
 
-    // Audio volume analysis via Web Audio API
+    // Initialize Web Audio mic volume meter
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
@@ -132,10 +181,10 @@ export const MockInterviewRoom: React.FC = () => {
       };
       checkVolume();
     } catch (err) {
-      console.warn("Microphone access not granted or not available:", err);
+      console.warn("Microphone access not granted:", err);
     }
 
-    // Speech-to-Text via Web Speech API
+    // Start Web Speech Recognition
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRec) {
       try {
@@ -149,19 +198,19 @@ export const MockInterviewRoom: React.FC = () => {
           for (let i = 0; i < event.results.length; i++) {
             transcript += event.results[i][0].transcript + ' ';
           }
-          setCurrentSpeechText(transcript.trim());
+          resetSilenceDetection(transcript.trim());
         };
 
         recognition.onerror = (event: any) => {
           console.warn("Speech recognition error:", event.error);
           if (event.error === 'not-allowed') {
-            setMicPermissionError("Microphone permission was blocked. You can type your answer in the box below.");
+            setMicPermissionError("Microphone permission was blocked. Please allow microphone access in your browser.");
           }
         };
 
         recognition.onend = () => {
-          // If still marked recording, auto-restart
-          if (isRecording) {
+          // If still in recording state, keep alive
+          if (isRecording && !isSubmitting) {
             try { recognition.start(); } catch {}
           }
         };
@@ -170,62 +219,77 @@ export const MockInterviewRoom: React.FC = () => {
         recognitionRef.current = recognition;
         setIsRecording(true);
       } catch (e) {
-        console.warn("Could not start SpeechRecognition:", e);
+        console.warn("SpeechRecognition start failed:", e);
         setIsRecording(true);
       }
     } else {
-      // Fallback for browsers without Web Speech Recognition
       setIsRecording(true);
     }
-  };
+  }, [isRecording, isSubmitting, resetSilenceDetection]);
 
-  const stopRecording = () => {
-    setIsRecording(false);
-    setAudioVolume(0.2);
+  // Turn Lifecycle: Speak question aloud -> when finished speaking, automatically open mic!
+  useEffect(() => {
+    if (!currentQ?.questionText) return;
 
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch {}
-      recognitionRef.current = null;
+    setCurrentSpeechText("");
+    latestSpeechRef.current = "";
+    stopRecordingCleanup();
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(currentQ.questionText);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+
+      const voices = window.speechSynthesis.getVoices();
+      const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha')));
+      if (naturalVoice) utterance.voice = naturalVoice;
+
+      utterance.onstart = () => {
+        setIsSpeakingQuestion(true);
+      };
+
+      utterance.onend = () => {
+        setIsSpeakingQuestion(false);
+        // AUTOMATIC HUMAN CONVERSATION: Interviewer finishes speaking -> mic immediately turns on!
+        if (autoConversationMode) {
+          setTimeout(() => {
+            startRecording();
+          }, 350);
+        }
+      };
+
+      utterance.onerror = () => {
+        setIsSpeakingQuestion(false);
+        if (autoConversationMode) {
+          startRecording();
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
     }
 
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-
-    if (audioContextRef.current) {
-      try { audioContextRef.current.close(); } catch {}
-      audioContextRef.current = null;
-    }
-  };
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [currentQ?.id, currentQ?.questionText, autoConversationMode, startRecording]);
 
   const handleReplayQuestion = () => {
+    stopRecordingCleanup();
     if ('speechSynthesis' in window && currentQ?.questionText) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(currentQ.questionText);
       utterance.onstart = () => setIsSpeakingQuestion(true);
-      utterance.onend = () => setIsSpeakingQuestion(false);
-      utterance.onerror = () => setIsSpeakingQuestion(false);
+      utterance.onend = () => {
+        setIsSpeakingQuestion(false);
+        if (autoConversationMode) {
+          setTimeout(() => startRecording(), 350);
+        }
+      };
       window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  const handleSubmit = async () => {
-    stopRecording();
-    setIsSubmitting(true);
-
-    const answer = currentSpeechText.trim() || 
-      "In our high-throughput distributed system, we leveraged Redis distributed locks to serialize critical payment transactions and Kafka partition keys by merchant ID to guarantee strict FIFO ordering without cross-partition contention.";
-
-    try {
-      await submitAnswer(answer);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -234,14 +298,14 @@ export const MockInterviewRoom: React.FC = () => {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6 animate-in fade-in duration-200">
       
-      {/* Proctor Alert Banner */}
+      {/* Proctoring Warning Banner */}
       {showWarning && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between text-rose-900 shadow-xs animate-in slide-in-from-top duration-150">
           <div className="flex items-center space-x-3">
             <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
             <div>
               <p className="text-xs font-semibold">Proctoring Alert: Tab Switch Detected ({interviewState.tabSwitches} / 4)</p>
-              <p className="text-[11px] text-rose-700 mt-0.5">Please remain on this window. College placement interviews are strictly monitored.</p>
+              <p className="text-[11px] text-rose-700 mt-0.5">Please stay on this window. College placement interviews are strictly proctored.</p>
             </div>
           </div>
           <button 
@@ -261,21 +325,21 @@ export const MockInterviewRoom: React.FC = () => {
         </div>
       )}
 
-      {/* Header & Proctor Bar */}
+      {/* Top Header & Proctor Bar */}
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
           <div>
             <div className="flex items-center space-x-2">
-              <h2 className="text-sm font-semibold tracking-tight text-neutral-900">AI Technical Mock Interview</h2>
+              <h2 className="text-sm font-semibold tracking-tight text-neutral-900">Conversational AI Mock Interview</h2>
               <span className="px-2 py-0.5 text-[10px] font-medium bg-neutral-100 text-neutral-600 rounded border border-neutral-200 font-mono">
                 Turn {questionNumber} of {totalQuestions}
               </span>
-              <span className="px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 rounded border border-emerald-200 font-mono">
-                LIVE INTERVIEWER
+              <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 font-mono">
+                <Zap className="w-3 h-3 mr-1" /> HANDS-FREE MODE
               </span>
             </div>
-            <p className="text-[11px] text-neutral-500">Grounded in student resume: Java, Kafka, Spring Boot</p>
+            <p className="text-[11px] text-neutral-500">Autonomous voice interaction: Interviewer speaks $\rightarrow$ Listens automatically $\rightarrow$ Advances on silence</p>
           </div>
         </div>
 
@@ -295,7 +359,7 @@ export const MockInterviewRoom: React.FC = () => {
         </div>
       </div>
 
-      {/* Center Voice Interaction Arena */}
+      {/* Center Voice Arena */}
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-8 shadow-xs flex flex-col items-center justify-center text-center space-y-6">
         
         {/* Active Question Badge */}
@@ -324,68 +388,87 @@ export const MockInterviewRoom: React.FC = () => {
             className="inline-flex items-center space-x-1.5 text-xs text-neutral-500 hover:text-neutral-900 transition-colors pt-1"
           >
             <RotateCcw className="w-3 h-3" />
-            <span>Replay audio voice</span>
+            <span>Replay interviewer audio</span>
           </button>
         </div>
 
-        {/* Voice Orb with Real Speech / Mic Reactions */}
+        {/* Voice Orb with Real-Time Speech Animation */}
         <div className="py-2">
           <VoiceOrb 
             state={orbState}
             volume={audioVolume}
             size={180}
           />
-          <p className="text-xs font-medium text-neutral-500 mt-2 font-mono uppercase tracking-wider">
-            {isSpeakingQuestion ? 'Interviewer Speaking Question...' : 
-             isRecording ? 'Listening to your voice (Speak now)...' : 
-             isSubmitting ? 'Evaluating answer with AI...' : 
-             'Click Start Speaking to respond'}
-          </p>
+          
+          <div className="mt-3 flex flex-col items-center space-y-1">
+            <p className="text-xs font-semibold text-neutral-700 font-mono uppercase tracking-wider">
+              {isSpeakingQuestion ? 'Interviewer Speaking...' : 
+               isRecording && isSilenceCountdown ? 'Silence detected... Submitting response...' :
+               isRecording ? 'Interviewer Listening (Speak freely)...' : 
+               isSubmitting ? 'Evaluating answer with AI...' : 
+               'Ready'}
+            </p>
+
+            {isRecording && isSilenceCountdown && (
+              <span className="inline-flex items-center text-[11px] font-mono text-emerald-600 font-medium animate-pulse">
+                <Clock className="w-3 h-3 mr-1" /> Completing turn automatically in 2s
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Speech Input / Live Transcription Box */}
-        <div className="w-full max-w-2xl bg-neutral-50 border border-neutral-200 rounded-xl p-4 text-left">
-          <div className="flex items-center justify-between text-[11px] font-medium text-neutral-500 mb-2">
+        {/* Live Speech Recognition Box */}
+        <div className="w-full max-w-2xl bg-neutral-50 border border-neutral-200 rounded-xl p-4 text-left space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-medium text-neutral-500">
             <span className="flex items-center">
               <Radio className={`w-3 h-3 mr-1.5 ${isRecording ? 'text-rose-600 animate-pulse' : 'text-neutral-400'}`} />
-              {isRecording ? 'Live Microphone Recording Active' : 'Speech Transcript'}
+              {isRecording ? 'Live Microphone Stream (Continuous)' : 'Speech Transcript'}
             </span>
-            <span className="font-mono text-[10px]">
-              {isRecording ? 'Listening...' : 'Editable Transcript'}
+            <span className="text-[10px] font-mono text-neutral-400">
+              {isRecording ? 'Auto-submits on pause' : 'Editable'}
             </span>
           </div>
+
           <textarea
             value={currentSpeechText}
-            onChange={(e) => setCurrentSpeechText(e.target.value)}
+            onChange={(e) => resetSilenceDetection(e.target.value)}
             rows={3}
             className="w-full bg-white border border-neutral-200 rounded-lg p-2.5 text-xs text-neutral-800 focus:outline-none focus:border-neutral-900 transition-colors resize-none leading-relaxed"
-            placeholder={isRecording ? "Speak into your microphone now... Your words will appear here in real time." : "Click Start Speaking or type your response here..."}
+            placeholder={
+              isSpeakingQuestion ? "Listen to the interviewer... The microphone will automatically activate as soon as the question finishes." :
+              isRecording ? "Speak into your microphone now... When you finish speaking, the system will automatically process your answer." :
+              "Your spoken transcript appears here..."
+            }
           />
         </div>
 
-        {/* Controls: Mic Toggle & Submit Turn */}
-        <div className="flex items-center space-x-4 pt-2">
+        {/* Action Controls & Manual Override */}
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <button
-            onClick={isRecording ? stopRecording : startRecording}
-            className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+            onClick={isRecording ? stopRecordingCleanup : startRecording}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
               isRecording 
-                ? 'bg-rose-600 text-white shadow-sm hover:bg-rose-700 animate-pulse' 
-                : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-800 shadow-2xs'
+                ? 'bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100' 
+                : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 shadow-2xs'
             }`}
           >
-            {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 text-neutral-600" />}
-            <span>{isRecording ? 'Stop / Mute Mic' : 'Start Speaking'}</span>
+            {isRecording ? <MicOff className="w-3.5 h-3.5 text-rose-600" /> : <Mic className="w-3.5 h-3.5 text-neutral-600" />}
+            <span>{isRecording ? 'Pause Mic' : 'Open Mic'}</span>
           </button>
 
           <button
-            disabled={isSubmitting}
-            onClick={handleSubmit}
-            className="flex items-center space-x-2 bg-neutral-900 hover:bg-black text-white px-6 py-2.5 rounded-xl text-xs font-medium transition-all shadow-xs disabled:opacity-50"
+            disabled={isSubmitting || !currentSpeechText.trim()}
+            onClick={() => executeSubmit()}
+            className="flex items-center space-x-2 bg-neutral-900 hover:bg-black text-white px-5 py-2 rounded-xl text-xs font-medium transition-all shadow-xs disabled:opacity-40"
           >
-            <span>{isSubmitting ? 'Evaluating...' : questionNumber === totalQuestions ? 'Submit & Finalize Score' : 'Next Question'}</span>
-            <ChevronRight className="w-4 h-4" />
+            <span>{isSubmitting ? 'Evaluating...' : 'I\'m Finished Speaking (Skip Wait)'}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
+
+        <p className="text-[11px] text-neutral-400">
+          Tip: You don't need to click anything! Just speak your response and pause for 2 seconds when finished.
+        </p>
 
       </div>
 
