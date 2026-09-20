@@ -299,6 +299,7 @@ class CustomTrainedModelClient(BaseLLMClient):
 # Singleton Factory Selector
 def get_llm_client() -> BaseLLMClient:
     """Returns configured LLM client based on environment."""
+    global GROQ_API_KEY, GROQ_MODEL, LLM_PROVIDER
     if LLM_PROVIDER == "custom":
         return CustomTrainedModelClient()
 
@@ -309,3 +310,18 @@ def get_llm_client() -> BaseLLMClient:
             print(f"Warning: Failed to initialize Groq client: {e}. Falling back to mock client.")
 
     return FallbackMockLLMClient()
+
+def update_groq_config(api_key: str = None, model: str = None, provider: str = None):
+    """Dynamically update Groq settings at runtime."""
+    global GROQ_API_KEY, GROQ_MODEL, LLM_PROVIDER
+    if api_key is not None:
+        GROQ_API_KEY = api_key.strip()
+    if model is not None:
+        GROQ_MODEL = model.strip()
+    if provider is not None:
+        LLM_PROVIDER = provider.strip()
+    return {
+        "groq_configured": bool(GROQ_API_KEY),
+        "groq_model": GROQ_MODEL,
+        "provider": LLM_PROVIDER
+    }
