@@ -23,7 +23,7 @@ const axios = require('axios');
 
 app.get('/api/config/status', async (req, res) => {
   try {
-    const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const aiUrl = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
     const resp = await axios.get(`${aiUrl}/health`, { timeout: 3000 });
     res.json({ success: true, ...resp.data });
   } catch (err) {
@@ -34,7 +34,7 @@ app.get('/api/config/status', async (req, res) => {
 app.post('/api/config/groq-key', async (req, res) => {
   const { apiKey, model } = req.body;
   try {
-    const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const aiUrl = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
     const resp = await axios.post(`${aiUrl}/ai/config`, {
       groq_api_key: apiKey,
       groq_model: model || 'llama-3.3-70b-versatile'
@@ -50,7 +50,7 @@ app.get('/api/health', (req, res) => {
     status: 'online',
     service: 'node-express-backend',
     port: PORT,
-    aiServiceUrl: process.env.AI_SERVICE_URL || 'http://localhost:8000'
+    aiServiceUrl: process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000'
   });
 });
 
