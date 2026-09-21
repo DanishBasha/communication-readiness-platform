@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../../services/api';
 import { MOCK_MENTEES_LIST } from '../../data/mockData';
 import { 
   Users, 
@@ -9,25 +10,73 @@ import {
   Download, 
   ArrowUpRight,
   ShieldCheck,
-  Building2
+  Building2,
+  CheckCircle2
 } from 'lucide-react';
 
 export const PlacementCoordinatorPortal: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCohort, setSelectedCohort] = useState<string>('ALL');
+  const [stats, setStats] = useState({
+    totalCandidates: 2840,
+    hopeEliteCount: 58,
+    pepDomainsCount: 21,
+    placementReadyRate: 68.4,
+    departmentStreamCount: 542,
+    hopeGeneralCount: 420,
+    pepTotalCount: 1820
+  });
+  const [candidates, setCandidates] = useState(MOCK_MENTEES_LIST);
+  const [reportGenerated, setReportGenerated] = useState(false);
 
-  const totalCandidates = 2840;
-  const hopeEliteCount = 58;
-  const pepDomainsCount = 21;
-  const placementReadyRate = 68.4;
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const s = await api.admin.getCoordinatorStats();
+        if (s) setStats(s);
+        const list = await api.admin.getStudents();
+        if (list && list.length > 0) setCandidates(list);
+      } catch (err) {
+        console.warn('Using local stats fallback:', err);
+      }
+    };
+    fetchStats();
+  }, []);
+
+  const handleExportCsv = () => {
+    const headers = 'ID,Name,RollNumber,Cohort,Domain,MockScore,Checklist,Status\n';
+    const rows = candidates.map(c => 
+      `${c.id},"${c.name}",${c.rollNumber},${c.track},"${c.domain}",${c.score},"${c.checklist}",${c.status}`
+    ).join('\n');
+    const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `college_placement_readiness_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleGenerateSenateReport = () => {
+    setReportGenerated(true);
+    setTimeout(() => setReportGenerated(false), 3000);
+  };
 
   const cohorts = [
-    { id: 'ALL', label: 'All Candidates', count: 2840 },
-    { id: 'HOPE_ELITE', label: '★ HOPE Elite', count: 58 },
-    { id: 'HOPE_NON_ELITE', label: 'HOPE General', count: 420 },
-    { id: 'PEP', label: 'PEP 21 Domains', count: 1820 },
-    { id: 'DEPARTMENT', label: 'Department Stream', count: 542 },
+    { id: 'ALL', label: 'All Candidates', count: stats.totalCandidates },
+    { id: 'HOPE_ELITE', label: '★ HOPE Elite', count: stats.hopeEliteCount },
+    { id: 'HOPE_NON_ELITE', label: 'HOPE General', count: stats.hopeGeneralCount },
+    { id: 'PEP', label: 'PEP 21 Domains', count: stats.pepTotalCount },
+    { id: 'DEPARTMENT', label: 'Department Stream', count: stats.departmentStreamCount },
   ];
+
+  const filteredCandidates = candidates.filter(s => {
+    const matchesCohort = selectedCohort === 'ALL' || s.track === selectedCohort;
+    const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          s.rollNumber.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCohort && matchesSearch;
+  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
@@ -47,16 +96,29 @@ export const PlacementCoordinatorPortal: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2.5">
-          <button className="flex items-center space-x-1.5 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 px-3.5 py-2 rounded-xl text-xs font-medium transition-colors shadow-2xs">
+          <button 
+            onClick={handleExportCsv}
+            className="flex items-center space-x-1.5 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 px-3.5 py-2 rounded-xl text-xs font-medium transition-colors shadow-2xs cursor-pointer"
+          >
             <Download className="w-3.5 h-3.5 text-neutral-500" />
             <span>Export CSV</span>
           </button>
-          <button className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs">
+          <button 
+            onClick={handleGenerateSenateReport}
+            className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs cursor-pointer"
+          >
             <Building2 className="w-3.5 h-3.5" />
-            <span>Generate Senate Report</span>
+            <span>{reportGenerated ? 'Report Compiled!' : 'Generate Senate Report'}</span>
           </button>
         </div>
       </div>
+
+      {reportGenerated && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center space-x-2 animate-in slide-in-from-top duration-150">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <span>Senate Academic Council placement audit synthesized: {stats.placementReadyRate}% candidates placement ready across 21 PEP domains.</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 bg-white border border-neutral-200/90 rounded-2xl shadow-xs">
@@ -64,7 +126,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
             <span className="font-medium">Total Candidates</span>
             <Users className="w-4 h-4 text-neutral-400" />
           </div>
-          <div className="text-2xl font-bold tracking-tight text-neutral-900">{totalCandidates.toLocaleString()}</div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{stats.totalCandidates.toLocaleString()}</div>
           <p className="text-[11px] text-neutral-400 mt-1">Registered for 2026 Season</p>
         </div>
 
@@ -73,7 +135,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
             <span className="font-medium">HOPE Elite Pool</span>
             <Award className="w-4 h-4 text-neutral-900" />
           </div>
-          <div className="text-2xl font-bold tracking-tight text-neutral-900">{hopeEliteCount}</div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{stats.hopeEliteCount}</div>
           <p className="text-[11px] text-emerald-600 font-medium mt-1">98.2% readiness target</p>
         </div>
 
@@ -82,7 +144,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
             <span className="font-medium">PEP Active Domains</span>
             <Layers className="w-4 h-4 text-neutral-400" />
           </div>
-          <div className="text-2xl font-bold tracking-tight text-neutral-900">{pepDomainsCount} Tracks</div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{stats.pepDomainsCount} Tracks</div>
           <p className="text-[11px] text-neutral-400 mt-1">Full-stack, Cloud, AI/ML, Embedded</p>
         </div>
 
@@ -91,7 +153,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
             <span className="font-medium">Eligibility Rate</span>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-bold tracking-tight text-neutral-900">{placementReadyRate}%</div>
+          <div className="text-2xl font-bold tracking-tight text-neutral-900">{stats.placementReadyRate}%</div>
           <p className="text-[11px] text-emerald-600 font-medium mt-1">+4.2% from prior cohort</p>
         </div>
       </div>
@@ -143,7 +205,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {MOCK_MENTEES_LIST.map((s) => (
+              {filteredCandidates.map((s) => (
                 <tr key={s.id} className="hover:bg-neutral-50/70 transition-colors">
                   <td className="py-3.5 px-6 font-medium text-neutral-900">
                     <div>{s.name}</div>
