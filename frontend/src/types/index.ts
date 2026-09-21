@@ -57,6 +57,7 @@ export interface QuestionTurn {
   questionNumber: number;
   questionText: string;
   difficulty: Difficulty;
+  category?: string;
   studentAnswer?: string;
   technicalScore?: number;
   communicationScore?: number;

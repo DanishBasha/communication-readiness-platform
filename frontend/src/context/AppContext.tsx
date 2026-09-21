@@ -21,6 +21,8 @@ import {
 } from '../data/mockData';
 import { api } from '../services/api';
 
+const BACKEND_API_BASE = 'http://localhost:5000/api';
+
 interface InterviewSessionState {
   isActive: boolean;
   sessionId?: string;
@@ -139,49 +141,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     liveTranscript: ''
   });
 
-  // Load initial student profile from API
+  // Handle Tab switches when in interview room with proctor audit sync
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const savedStr = localStorage.getItem('auth_user');
-        let targetId = student.id;
-        if (savedStr) {
-          const u = JSON.parse(savedStr);
-          if (u.role === 'STUDENT') {
-            targetId = u.studentId || u.id;
-          }
-        }
-        if (targetId) {
-          const profile = await api.student.getProfile(targetId);
-          if (profile) {
-            setStudent(profile);
-            if (profile.recentReports && profile.recentReports.length > 0) {
-              setLatestReport(profile.recentReports[0]);
-            } else {
-              setLatestReport(null);
-            }
-          }
-        }
-        const tenures = await api.admin.getTrainerTenures();
-        if (tenures && tenures.length > 0) {
-          setTrainerTenures(tenures);
-        }
-        const asgs = await api.admin.getAssignments();
-        if (asgs && asgs.length > 0) {
-          setAssignments(asgs);
-        }
-      } catch (err) {
-        console.warn('Using local fallback state:', err);
-      }
-    };
-    fetchInitialData();
-  }, []);
-
-  // Handle Tab switches when in interview room
-  useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (document.hidden && interviewState.isActive) {
-        recordTabSwitch();
+        setInterviewState(prev => {
+          const newSwitches = prev.tabSwitches + 1;
+          const flagged = newSwitches >= 4;
+          return {
+            ...prev,
+            tabSwitches: newSwitches,
+            isFlagged: flagged
+          };
+        });
+
+        if (interviewState.sessionId) {
+          try {
+            await fetch(`${BACKEND_API_BASE}/interview/proctor-event`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId: interviewState.sessionId })
+            });
+          } catch {
+            // Offline fallback
+          }
+        }
       }
     };
 
@@ -190,21 +174,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [interviewState.isActive, interviewState.sessionId]);
 
   const startInterview = async (type: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION' = 'MOCK_INTERVIEW') => {
-    let sessId = `sess-${Date.now()}`;
-    let initialQuestions = MOCK_INTERVIEW_QUESTIONS;
+    setActiveView(type === 'MOCK_INTERVIEW' ? 'INTERVIEW_ROOM' : 'LISTENING_ROOM');
 
     try {
-      const res = await api.interview.start(student.id, type);
-      if (res && res.sessionId) {
-        sessId = res.sessionId;
-        if (res.firstQuestion) {
-          initialQuestions = [res.firstQuestion, ...MOCK_INTERVIEW_QUESTIONS.slice(1)];
-        }
+      const res = await fetch(`${BACKEND_API_BASE}/interview/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, candidateId: student.id })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const serverSession = data.session;
+        setInterviewState({
+          isActive: true,
+          sessionId: serverSession.id,
+          type,
+          turnIndex: 0,
+          currentDifficulty: (serverSession.currentDifficulty as Difficulty) || 'EASY',
+          questions: serverSession.questions.map((q: any) => ({
+            id: q.id,
+            questionNumber: q.questionNumber,
+            questionText: q.questionText,
+            difficulty: q.difficulty as Difficulty
+          })),
+          tabSwitches: 0,
+          isFlagged: false,
+          orbState: 'SPEAKING',
+          liveTranscript: ''
+        });
+        return;
       }
-    } catch (err) {
-      console.warn('Started simulated mock session offline:', err);
+    } catch {
+      console.warn('[AppContext] Node backend unreachable; using local session state.');
     }
 
+    // Fallback if backend is not reachable
     setInterviewState({
       isActive: true,
       sessionId: sessId,
@@ -217,67 +222,104 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orbState: 'SPEAKING',
       liveTranscript: ''
     });
-    setActiveView(type === 'MOCK_INTERVIEW' ? 'INTERVIEW_ROOM' : 'LISTENING_ROOM');
   };
 
   const submitAnswer = async (answerText: string) => {
-    const currentQ = interviewState.questions[interviewState.turnIndex];
-    let evaluatedTurn: QuestionTurn = {
-      ...currentQ,
-      studentAnswer: answerText,
-      technicalScore: 85,
-      communicationScore: 78,
-      wpm: 124,
-      fillerWords: 2,
-      feedback: 'Good technical reasoning, articulated tradeoffs cleanly.'
-    };
+    setInterviewState(prev => ({ ...prev, orbState: 'THINKING' }));
+
+    if (interviewState.sessionId) {
+      try {
+        const res = await fetch(`${BACKEND_API_BASE}/interview/submit-turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: interviewState.sessionId,
+            answerText
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+
+          if (data.concluded && data.report) {
+            setLatestReport(data.report);
+            setStudent(prev => ({
+              ...prev,
+              recentReports: [data.report, ...prev.recentReports]
+            }));
+            setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
+            setActiveView('REPORT_VIEW');
+            return;
+          }
+
+          if (data.nextQuestion) {
+            setInterviewState(prev => {
+              const updatedQuestions = [...prev.questions];
+              updatedQuestions[prev.turnIndex] = {
+                ...updatedQuestions[prev.turnIndex],
+                studentAnswer: answerText,
+                technicalScore: data.evaluation.technical_score,
+                communicationScore: data.evaluation.communication_score,
+                wpm: data.evaluation.words_per_minute,
+                fillerWords: data.evaluation.total_fillers,
+                feedback: data.evaluation.feedback,
+                strengths: data.evaluation.strengths,
+                weaknesses: data.evaluation.weaknesses
+              };
+
+              const nextQ: QuestionTurn = {
+                id: data.nextQuestion.id,
+                questionNumber: data.nextQuestion.questionNumber,
+                questionText: data.nextQuestion.questionText,
+                difficulty: data.nextQuestion.difficulty as Difficulty
+              };
+
+              return {
+                ...prev,
+                turnIndex: prev.turnIndex + 1,
+                currentDifficulty: data.nextQuestion.difficulty as Difficulty,
+                questions: [...updatedQuestions, nextQ],
+                orbState: 'SPEAKING',
+                liveTranscript: ''
+              };
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[AppContext] Submit turn failed via backend; using local evaluator.');
+      }
+    }
+
+    // Local in-memory advance fallback
+    setInterviewState(prev => {
+      const currentQ = prev.questions[prev.turnIndex];
+      const updatedQ: QuestionTurn = {
+        ...currentQ,
+        studentAnswer: answerText,
+        technicalScore: 85,
+        communicationScore: 78,
+        wpm: 124,
+        fillerWords: 2,
+        feedback: 'Good technical reasoning, articulated tradeoffs cleanly.'
+      };
 
     let nextDifficulty: Difficulty = interviewState.currentDifficulty;
     let nextQTurn: QuestionTurn | null = null;
     let finalRep: DiagnosticReport | null = null;
 
-    if (interviewState.sessionId) {
-      try {
-        const res = await api.interview.submitAnswer(interviewState.sessionId, answerText, 15);
-        if (res) {
-          if (res.turnEvaluation) {
-            evaluatedTurn = { ...evaluatedTurn, ...res.turnEvaluation };
-          }
-          if (res.nextQuestion) {
-            nextQTurn = res.nextQuestion;
-            nextDifficulty = res.nextQuestion.difficulty;
-          }
-          if (res.isCompleted && res.finalReport) {
-            finalRep = res.finalReport;
-          }
-        }
-      } catch (err) {
-        console.warn('Evaluated turn offline:', err);
-      }
-    }
+      let nextDifficulty: Difficulty = prev.currentDifficulty;
+      if (prev.currentDifficulty === 'EASY') nextDifficulty = 'MEDIUM';
+      else if (prev.currentDifficulty === 'MEDIUM') nextDifficulty = 'ADVANCED';
 
     if (!nextQTurn && !finalRep) {
       if (interviewState.currentDifficulty === 'EASY') nextDifficulty = 'MEDIUM';
       else if (interviewState.currentDifficulty === 'MEDIUM') nextDifficulty = 'ADVANCED';
     }
 
-    const nextTurn = interviewState.turnIndex + 1;
-    const updatedQuestions = [...interviewState.questions];
-    updatedQuestions[interviewState.turnIndex] = evaluatedTurn;
-    if (nextQTurn && nextTurn < updatedQuestions.length) {
-      updatedQuestions[nextTurn] = nextQTurn;
-    }
-
-    if (finalRep || nextTurn >= interviewState.questions.length) {
-      if (finalRep) {
-        setLatestReport(finalRep);
-        setStudent(prev => ({
-          ...prev,
-          recentReports: [finalRep!, ...prev.recentReports]
-        }));
-        setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
-        setActiveView('REPORT_VIEW');
-        return;
+      if (nextTurn >= prev.questions.length) {
+        setTimeout(() => endInterview(), 500);
+        return prev;
       }
       setTimeout(() => endInterview(), 500);
       return;
@@ -293,15 +335,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const endInterview = async () => {
-    let report: DiagnosticReport | null = null;
-    if (interviewState.sessionId) {
-      try {
-        report = await api.interview.finalize(interviewState.sessionId);
-      } catch (err) {
-        console.warn('Finalized report offline:', err);
-      }
-    }
+  const endInterview = () => {
+    const newReport: DiagnosticReport = {
+      id: `rep-${Date.now().toString().slice(-4)}`,
+      date: new Date().toISOString().split('T')[0],
+      sessionType: interviewState.type,
+      overallScore: Math.floor(Math.random() * 15) + 78,
+      technicalScore: Math.floor(Math.random() * 12) + 82,
+      communicationScore: Math.floor(Math.random() * 14) + 72,
+      averageWpm: Math.floor(Math.random() * 20) + 120,
+      totalFillerWords: Math.floor(Math.random() * 8) + 4,
+      fillerWordBreakdown: { 'uh': 4, 'um': 3, 'like': 2, 'actually': 1 },
+      skillBreakdown: [
+        { skill: 'Java & OOP Principles', score: 92, status: 'STRONG', recommendation: 'Outstanding precision regarding garbage collection and thread lifecycle.' },
+        { skill: 'Database Optimization (PostgreSQL)', score: 78, status: 'MODERATE', recommendation: 'Good knowledge of indexes; brush up on query planner explain output.' },
+        { skill: 'Distributed Messaging (Kafka)', score: 85, status: 'STRONG', recommendation: 'Clearly justified consumer group partitions and fault tolerance.' },
+        { skill: 'System Design & Tradeoffs', score: 58, status: 'NEEDS_WORK', recommendation: 'Review rate limiting algorithms (Token Bucket vs Leaky Bucket).' }
+      ],
+      actionableNextSteps: [
+        'Maintain current cadence! Your speaking rate of 128 WPM is right in the sweet spot (120–150 WPM).',
+        'Watch out for repeating "actually" at the start of technical sentences.',
+        'Study rate-limiting algorithms to polish your distributed system architecture answers.'
+      ],
+      tabSwitches: interviewState.tabSwitches,
+      isFlagged: interviewState.isFlagged
+    };
 
     if (!report) {
       report = {
@@ -398,17 +456,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleCriteriaTask = async (taskId: string) => {
-    try {
-      await api.tasks.toggleTask(student.id, taskId);
-    } catch {
-      // Local fallback
-    }
     setStudent(prev => ({
       ...prev,
       criteriaTasks: prev.criteriaTasks.map(t => 
         t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t
       )
     }));
+
+    try {
+      await fetch(`${BACKEND_API_BASE}/students/criteria/${taskId}`, { method: 'PATCH' });
+    } catch {
+      // Offline fallback
+    }
   };
 
   const verifyCriteriaTask = async (taskId: string) => {
@@ -425,62 +484,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const uploadResumeData = async (payload: FormData | { resumeText: string; fileName?: string } | ParsedResume): Promise<ParsedResume> => {
-    let parsed: ParsedResume;
+  const uploadResumeData = async (resume: ParsedResume) => {
+    setStudent(prev => ({ ...prev, resume }));
     try {
-      const targetId = student.id || currentUser?.studentId || currentUser?.id || 'me';
-      parsed = await api.student.uploadResume(targetId, payload);
-    } catch (err) {
-      console.warn('Resume upload API fallback:', err);
-      if ('skills' in (payload as any) && 'projects' in (payload as any)) {
-        parsed = payload as ParsedResume;
-      } else {
-        const fileName = (payload instanceof FormData) 
-          ? 'Uploaded_Resume.pdf' 
-          : (payload as any).fileName || 'Candidate_Resume.txt';
-        parsed = {
-          fileName,
-          parsedAt: new Date().toISOString().split('T')[0],
-          summary: 'Candidate technical profile parsed and verified for mock interview grounding.',
-          skills: {
-            languages: ['Java', 'Python', 'TypeScript', 'SQL'],
-            frameworks: ['React', 'Spring Boot', 'Node.js'],
-            databases: ['PostgreSQL', 'Redis'],
-            tools: ['Git', 'Docker']
-          },
-          projects: [
-            {
-              title: 'Full-Stack Distributed System',
-              techStack: ['Java', 'Spring Boot', 'PostgreSQL'],
-              description: 'Scalable service handling distributed events and transactional persistence.'
-            }
-          ]
-        };
-      }
+      await fetch(`${BACKEND_API_BASE}/students/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resume })
+      });
+    } catch {
+      // Offline fallback
     }
-    setStudent(prev => ({
-      ...prev,
-      resume: parsed
-    }));
-    return parsed;
-  };
-
-  const updateCodingHandles = async (handles: Partial<CodingHandles>) => {
-    try {
-      const targetId = student.id || currentUser?.studentId || currentUser?.id;
-      if (targetId) {
-        await api.student.updateCodingHandles(targetId, handles as any);
-      }
-    } catch (err) {
-      console.warn('Update coding handles offline:', err);
-    }
-    setStudent(prev => ({
-      ...prev,
-      codingHandles: {
-        ...prev.codingHandles,
-        ...handles
-      }
-    }));
   };
 
   const openAuthModal = (mode: 'login' | 'register' = 'login') => {
