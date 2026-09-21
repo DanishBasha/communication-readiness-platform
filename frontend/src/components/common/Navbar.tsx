@@ -10,22 +10,21 @@ import {
   Layers, 
   GraduationCap, 
   Sparkles,
-  Check
+  Check,
+  LogOut
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { activeRole, setActiveRole, student, setActiveView } = useApp();
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const { activeRole, student, setActiveView, currentUser, logout } = useApp();
 
-  const roles: { role: UserRole; label: string; icon: React.ReactNode; badge: string }[] = [
-    { role: 'STUDENT', label: 'Student Portal', icon: <User className="w-4 h-4" />, badge: student?.name || 'Aravind Kumar' },
-    { role: 'FACULTY_MENTOR', label: 'Faculty Mentor', icon: <GraduationCap className="w-4 h-4" />, badge: 'Dr. Ranganathan (25 Mentees)' },
-    { role: 'PROGRAM_ADMIN', label: 'Program Admin', icon: <Layers className="w-4 h-4" />, badge: 'HOPE / 21 PEP Domains' },
-    { role: 'TRAINER', label: 'Domain Trainer', icon: <Sparkles className="w-4 h-4" />, badge: '10-15 Day Active Tenure' },
-    { role: 'PLACEMENT_COORDINATOR', label: 'Placement Coordinator', icon: <ShieldCheck className="w-4 h-4" />, badge: 'Super Admin' },
-  ];
-
-  const currentRoleInfo = roles.find(r => r.role === activeRole);
+  const roleBadgeMap: Record<string, string> = {
+    'SUPER_ADMIN': '👑 Super Administrator',
+    'PROGRAM_ADMIN': '🏢 Program Administrator',
+    'FACULTY_MENTOR': '👨‍🏫 Faculty Mentor',
+    'TRAINER': '💼 Domain Trainer',
+    'PLACEMENT_COORDINATOR': '📊 Placement Coordinator',
+    'STUDENT': '🎓 Student'
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-neutral-200/80">
@@ -68,65 +67,44 @@ export const Navbar: React.FC = () => {
               </div>
             )}
 
-            <div className="relative">
-              <button
-                onClick={() => setRoleMenuOpen(!roleMenuOpen)}
-                className="flex items-center space-x-2 bg-white hover:bg-neutral-50 border border-neutral-200/90 shadow-2xs hover:border-neutral-300 text-neutral-900 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-              >
-                <span className="text-neutral-600">{currentRoleInfo?.icon}</span>
-                <span className="font-medium text-neutral-800">{currentRoleInfo?.label}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-neutral-400 ml-1" />
-              </button>
-
-              {roleMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setRoleMenuOpen(false)} />
-                  <div className="absolute right-0 mt-1.5 w-72 bg-white border border-neutral-200 rounded-xl shadow-lg z-20 py-1.5 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                    <div className="px-3 py-2 border-b border-neutral-100 bg-neutral-50/50">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 font-mono">Switch Role Preview</p>
-                      <p className="text-xs text-neutral-500 mt-0.5">Test end-to-end college workflows</p>
-                    </div>
-                    
-                    <div className="p-1">
-                      {roles.map((item) => {
-                        const isSelected = activeRole === item.role;
-                        return (
-                          <button
-                            key={item.role}
-                            onClick={() => {
-                              setActiveRole(item.role);
-                              setActiveView('DASHBOARD');
-                              setRoleMenuOpen(false);
-                            }}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                              isSelected 
-                                ? 'bg-neutral-900 text-white font-medium' 
-                                : 'text-neutral-700 hover:bg-neutral-100'
-                            }`}
-                          >
-                            <div className="flex items-center space-x-2.5 min-w-0">
-                              <span className={isSelected ? 'text-white' : 'text-neutral-500'}>{item.icon}</span>
-                              <div className="truncate">
-                                <p className="text-xs font-medium truncate">{item.label}</p>
-                                <p className={`text-[10px] truncate ${isSelected ? 'text-neutral-300' : 'text-neutral-400'}`}>
-                                  {item.badge}
-                                </p>
-                              </div>
-                            </div>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-white flex-shrink-0 ml-2" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </>
-              )}
+            {/* Authenticated Role Badge */}
+            <div className="flex items-center space-x-2">
+              <span className={`px-2.5 py-1 text-xs font-semibold rounded-lg border flex items-center space-x-1.5 ${
+                activeRole === 'SUPER_ADMIN'
+                  ? 'bg-amber-50 text-amber-900 border-amber-200'
+                  : activeRole === 'PROGRAM_ADMIN'
+                  ? 'bg-blue-50 text-blue-900 border-blue-200'
+                  : activeRole === 'FACULTY_MENTOR'
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                  : activeRole === 'TRAINER'
+                  ? 'bg-purple-50 text-purple-900 border-purple-200'
+                  : 'bg-neutral-100 text-neutral-800 border-neutral-200'
+              }`}>
+                <span>{roleBadgeMap[activeRole] || activeRole}</span>
+              </span>
             </div>
 
-            <div className="flex items-center pl-1">
-              <div className="w-8 h-8 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center text-xs font-semibold text-neutral-800">
-                {(student?.name || 'Aravind Kumar').split(' ').map((n: string) => n[0]).join('')}
+            {/* User Profile & Sign Out */}
+            <div className="flex items-center space-x-2 pl-2 border-l border-neutral-200 ml-1">
+              <div className="w-8 h-8 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs font-semibold shadow-xs">
+                {(currentUser?.name || student?.name || 'Aravind Kumar').split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
               </div>
+              <div className="hidden lg:block text-left text-xs leading-tight">
+                <p className="font-semibold text-neutral-900 truncate max-w-[140px]">
+                  {currentUser?.name || student?.name || 'Aravind Kumar'}
+                </p>
+                <p className="text-[10px] text-neutral-500 font-mono truncate max-w-[140px]">
+                  {currentUser?.email || activeRole}
+                </p>
+              </div>
+
+              <button
+                onClick={logout}
+                title="Sign Out"
+                className="p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors ml-1 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
 
           </div>

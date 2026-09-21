@@ -13,9 +13,13 @@ import {
   ShieldCheck, 
   ArrowUpRight,
   TrendingUp,
-  Award
+  Award,
+  Edit3,
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import { ResumeUploadModal } from './ResumeUploadModal';
+import { SuggestionChatModal } from './SuggestionChatModal';
 
 export const StudentDashboard: React.FC = () => {
   const { 
@@ -23,14 +27,40 @@ export const StudentDashboard: React.FC = () => {
     startInterview, 
     toggleCriteriaTask, 
     latestReport, 
-    setActiveView 
+    setActiveView,
+    updateCodingHandles
   } = useApp();
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [suggestionModalOpen, setSuggestionModalOpen] = useState(false);
+  const [handlesModalOpen, setHandlesModalOpen] = useState(false);
+  const [lcUsername, setLcUsername] = useState(student.codingHandles?.leetcode || '');
+  const [lcSolvedCount, setLcSolvedCount] = useState<number>(student.codingHandles?.leetcodeSolved ?? 0);
+  const [ghUsername, setGhUsername] = useState(student.codingHandles?.github || '');
+  const [ghReposCount, setGhReposCount] = useState<number>(student.codingHandles?.githubRepos ?? 0);
+  const [savingHandles, setSavingHandles] = useState(false);
 
   const completedCriteriaCount = student.criteriaTasks.filter((c: CriteriaTask) => c.isCompleted).length;
   const verifiedCriteriaCount = student.criteriaTasks.filter((c: CriteriaTask) => c.verifiedByMentor).length;
-  const progressPercent = Math.round((completedCriteriaCount / student.criteriaTasks.length) * 100);
+  const progressPercent = Math.round((completedCriteriaCount / (student.criteriaTasks.length || 1)) * 100);
+
+  const handleSaveHandles = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingHandles(true);
+    try {
+      await updateCodingHandles({
+        leetcode: lcUsername.trim() || undefined,
+        leetcodeSolved: Number(lcSolvedCount) || 0,
+        github: ghUsername.trim() || undefined,
+        githubRepos: Number(ghReposCount) || 0
+      });
+      setHandlesModalOpen(false);
+    } catch (err) {
+      console.warn('Error saving handles:', err);
+    } finally {
+      setSavingHandles(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
@@ -60,12 +90,21 @@ export const StudentDashboard: React.FC = () => {
               <div className="flex items-center space-x-1.5">
                 <span className="text-neutral-400 font-normal">Faculty Mentor:</span>
                 <span className="font-medium text-neutral-800">{student.mentorName}</span>
-                <span className="text-neutral-400">({student.mentorEmail})</span>
+                {student.mentorEmail && <span className="text-neutral-400">({student.mentorEmail})</span>}
               </div>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <button
+              onClick={() => setSuggestionModalOpen(true)}
+              className="flex items-center space-x-2 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-neutral-800 px-4 py-2.5 rounded-xl text-xs font-medium transition-all shadow-2xs"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              <span>AI Suggestion Coach</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 ml-1 animate-pulse"></span>
+            </button>
+
             <button
               onClick={() => setUploadModalOpen(true)}
               className="flex items-center space-x-2 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-neutral-800 px-4 py-2.5 rounded-xl text-xs font-medium transition-all shadow-2xs"
@@ -75,13 +114,21 @@ export const StudentDashboard: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-emerald-500 ml-1"></span>
             </button>
 
-            {latestReport && (
+            {latestReport ? (
               <button
                 onClick={() => setActiveView('REPORT_VIEW')}
                 className="flex items-center space-x-2 bg-neutral-900 hover:bg-black text-white px-4 py-2.5 rounded-xl text-xs font-medium transition-all shadow-xs"
               >
                 <TrendingUp className="w-4 h-4" />
                 <span>View Scorecard ({latestReport.overallScore}/100)</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => startInterview('MOCK_INTERVIEW')}
+                className="flex items-center space-x-2 bg-neutral-900 hover:bg-black text-white px-4 py-2.5 rounded-xl text-xs font-medium transition-all shadow-xs"
+              >
+                <Mic className="w-4 h-4" />
+                <span>Take 1st Mock Interview</span>
               </button>
             )}
           </div>
@@ -90,28 +137,56 @@ export const StudentDashboard: React.FC = () => {
 
         {/* Profiles Stat Strip */}
         <div className="mt-6 pt-6 border-t border-neutral-100 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60">
+          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60 relative group">
             <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
               <span>LeetCode Solved</span>
-              <Code2 className="w-3.5 h-3.5 text-neutral-400" />
+              <button 
+                onClick={() => {
+                  setLcUsername(student.codingHandles?.leetcode || '');
+                  setLcSolvedCount(student.codingHandles?.leetcodeSolved ?? 0);
+                  setGhUsername(student.codingHandles?.github || '');
+                  setGhReposCount(student.codingHandles?.githubRepos ?? 0);
+                  setHandlesModalOpen(true);
+                }}
+                className="p-1 rounded text-neutral-400 hover:text-neutral-900 hover:bg-neutral-200/60 transition-colors"
+                title="Edit handles"
+              >
+                <Edit3 className="w-3 h-3" />
+              </button>
             </div>
             <div className="flex items-baseline space-x-1.5">
-              <span className="text-xl font-bold text-neutral-900">{student.codingHandles.leetcodeSolved || 248}</span>
+              <span className="text-xl font-bold text-neutral-900">{student.codingHandles?.leetcodeSolved ?? 0}</span>
               <span className="text-[11px] text-neutral-500 font-medium">/ 300 Target</span>
             </div>
-            <p className="text-[10px] text-neutral-400 mt-1 font-mono">@{student.codingHandles.leetcode || 'aravind_k'}</p>
+            <p className="text-[10px] text-neutral-400 mt-1 font-mono truncate">
+              {student.codingHandles?.leetcode ? `@${student.codingHandles.leetcode}` : 'Not connected'}
+            </p>
           </div>
 
-          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60">
+          <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60 relative group">
             <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
               <span>GitHub Repos</span>
-              <GitBranch className="w-3.5 h-3.5 text-neutral-400" />
+              <button 
+                onClick={() => {
+                  setLcUsername(student.codingHandles?.leetcode || '');
+                  setLcSolvedCount(student.codingHandles?.leetcodeSolved ?? 0);
+                  setGhUsername(student.codingHandles?.github || '');
+                  setGhReposCount(student.codingHandles?.githubRepos ?? 0);
+                  setHandlesModalOpen(true);
+                }}
+                className="p-1 rounded text-neutral-400 hover:text-neutral-900 hover:bg-neutral-200/60 transition-colors"
+                title="Edit handles"
+              >
+                <Edit3 className="w-3 h-3" />
+              </button>
             </div>
             <div className="flex items-baseline space-x-1.5">
-              <span className="text-xl font-bold text-neutral-900">{student.codingHandles.githubRepos || 18}</span>
+              <span className="text-xl font-bold text-neutral-900">{student.codingHandles?.githubRepos ?? 0}</span>
               <span className="text-[11px] text-neutral-500 font-medium">Public</span>
             </div>
-            <p className="text-[10px] text-neutral-400 mt-1 font-mono">@{student.codingHandles.github || 'aravindkumar'}</p>
+            <p className="text-[10px] text-neutral-400 mt-1 font-mono truncate">
+              {student.codingHandles?.github ? `@${student.codingHandles.github}` : 'Not connected'}
+            </p>
           </div>
 
           <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60">
@@ -141,6 +216,147 @@ export const StudentDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* 2. Dynamic Resume & Skills Intake Grounding Section */}
+      {!student.resume ? (
+        <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-in fade-in">
+          <div className="flex items-start space-x-3.5">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm font-bold text-neutral-900">Resume Intake Pending</h3>
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-200/80 text-amber-900 rounded font-mono uppercase">
+                  Action Required
+                </span>
+              </div>
+              <p className="text-xs text-neutral-600 mt-1 max-w-2xl leading-relaxed">
+                Upload your resume (PDF or pasted text) to extract your verified tech stack (Languages, Frameworks, Databases) and projects. The AI Interviewer uses your extracted profile to ask personalized, resume-grounded technical questions.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setUploadModalOpen(true)}
+            className="bg-neutral-900 hover:bg-black text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center justify-center space-x-1.5 shrink-0"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Upload Resume Now</span>
+          </button>
+        </div>
+      ) : (
+        <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4 animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-neutral-100">
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-sm font-bold text-neutral-900">
+                    Active Resume Grounding: {student.resume.fileName}
+                  </h3>
+                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800 rounded font-mono uppercase">
+                    Verified &amp; Active
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Parsed on {student.resume.parsedAt || new Date().toISOString().split('T')[0]} · Grounding enabled for Mock AI Interviews
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setUploadModalOpen(true)}
+              className="text-xs font-medium text-neutral-700 hover:text-neutral-900 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 px-3 py-1.5 rounded-xl transition-colors shrink-0 flex items-center space-x-1.5 self-start sm:self-auto"
+            >
+              <FileText className="w-3.5 h-3.5 text-neutral-500" />
+              <span>Update Resume</span>
+            </button>
+          </div>
+
+          {student.resume.summary && (
+            <p className="text-xs text-neutral-600 bg-neutral-50/60 p-3 rounded-xl border border-neutral-100 leading-relaxed italic">
+              "{student.resume.summary}"
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1 text-xs">
+            <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200/60 space-y-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-semibold">Languages</span>
+              <div className="flex flex-wrap gap-1">
+                {student.resume.skills?.languages?.length ? (
+                  student.resume.skills.languages.map((l: string, i: number) => (
+                    <span key={i} className="px-1.5 py-0.5 bg-white border border-neutral-200 rounded text-[11px] font-medium text-neutral-800">
+                      {l}
+                    </span>
+                  ))
+                ) : <span className="text-neutral-400 italic">None listed</span>}
+              </div>
+            </div>
+
+            <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200/60 space-y-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-semibold">Frameworks</span>
+              <div className="flex flex-wrap gap-1">
+                {student.resume.skills?.frameworks?.length ? (
+                  student.resume.skills.frameworks.map((f: string, i: number) => (
+                    <span key={i} className="px-1.5 py-0.5 bg-white border border-neutral-200 rounded text-[11px] font-medium text-neutral-800">
+                      {f}
+                    </span>
+                  ))
+                ) : <span className="text-neutral-400 italic">None listed</span>}
+              </div>
+            </div>
+
+            <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200/60 space-y-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-semibold">Databases</span>
+              <div className="flex flex-wrap gap-1">
+                {student.resume.skills?.databases?.length ? (
+                  student.resume.skills.databases.map((d: string, i: number) => (
+                    <span key={i} className="px-1.5 py-0.5 bg-white border border-neutral-200 rounded text-[11px] font-medium text-neutral-800">
+                      {d}
+                    </span>
+                  ))
+                ) : <span className="text-neutral-400 italic">None listed</span>}
+              </div>
+            </div>
+
+            <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200/60 space-y-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-semibold">Tools &amp; Cloud</span>
+              <div className="flex flex-wrap gap-1">
+                {student.resume.skills?.tools?.length ? (
+                  student.resume.skills.tools.map((t: string, i: number) => (
+                    <span key={i} className="px-1.5 py-0.5 bg-white border border-neutral-200 rounded text-[11px] font-medium text-neutral-800">
+                      {t}
+                    </span>
+                  ))
+                ) : <span className="text-neutral-400 italic">None listed</span>}
+              </div>
+            </div>
+          </div>
+
+          {student.resume.projects && student.resume.projects.length > 0 && (
+            <div className="pt-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-2">Parsed Projects Grounded For AI Questions</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {student.resume.projects.map((proj: any, idx: number) => (
+                  <div key={idx} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-neutral-900 truncate">{proj.title}</p>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-700 font-mono">Project {idx + 1}</span>
+                    </div>
+                    {proj.techStack && (
+                      <p className="text-[10px] text-neutral-500 font-mono truncate">Stack: {Array.isArray(proj.techStack) ? proj.techStack.join(', ') : proj.techStack}</p>
+                    )}
+                    {proj.description && (
+                      <p className="text-[11px] text-neutral-600 line-clamp-2">{proj.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 2. Primary Action Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -323,6 +539,106 @@ export const StudentDashboard: React.FC = () => {
 
       {uploadModalOpen && (
         <ResumeUploadModal onClose={() => setUploadModalOpen(false)} />
+      )}
+
+      {suggestionModalOpen && (
+        <SuggestionChatModal onClose={() => setSuggestionModalOpen(false)} studentId={student.id} />
+      )}
+
+      {/* 4. Link / Edit Coding Handles Modal */}
+      {handlesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/70">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center">
+                  <Code2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-900">Link Coding Handles</h3>
+                  <p className="text-xs text-neutral-500">Connect your personal LeetCode &amp; GitHub stats</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setHandlesModalOpen(false)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveHandles} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">LeetCode Username</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-xs text-neutral-400 font-mono">@</span>
+                  <input
+                    type="text"
+                    value={lcUsername}
+                    onChange={(e) => setLcUsername(e.target.value)}
+                    placeholder="e.g. bavan_dev"
+                    className="w-full pl-7 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 font-mono transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">LeetCode Problems Solved</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="3500"
+                  value={lcSolvedCount}
+                  onChange={(e) => setLcSolvedCount(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">GitHub Handle</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-xs text-neutral-400 font-mono">@</span>
+                  <input
+                    type="text"
+                    value={ghUsername}
+                    onChange={(e) => setGhUsername(e.target.value)}
+                    placeholder="e.g. bavanbalaji007"
+                    className="w-full pl-7 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 font-mono transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">Public GitHub Repositories</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="1000"
+                  value={ghReposCount}
+                  onChange={(e) => setGhReposCount(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors font-mono"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setHandlesModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-600 hover:bg-neutral-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingHandles}
+                  className="bg-neutral-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-medium transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {savingHandles ? 'Saving...' : 'Save Handles'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
     </div>

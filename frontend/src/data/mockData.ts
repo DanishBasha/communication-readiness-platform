@@ -69,6 +69,30 @@ export const INITIAL_CRITERIA_TASKS: CriteriaTask[] = [
   }
 ];
 
+export const DEFAULT_CLEAN_STUDENT: StudentProfile = {
+  id: 'stu-fresh',
+  name: 'Candidate Student',
+  rollNumber: '22CS1001',
+  email: 'student@college.edu',
+  department: 'Computer Science & Engineering',
+  batchYear: 2026,
+  track: 'HOPE_ELITE',
+  mentorName: 'Dr. S. Ranganathan',
+  mentorEmail: 'ranganathan.s@college.edu',
+  codingHandles: {
+    github: undefined,
+    leetcode: undefined,
+    hackerrank: undefined,
+    codeforces: undefined,
+    codechef: undefined,
+    leetcodeSolved: 0,
+    githubRepos: 0
+  },
+  resume: null,
+  criteriaTasks: INITIAL_CRITERIA_TASKS.map(t => ({ ...t, isCompleted: false, verifiedByMentor: false })),
+  recentReports: []
+};
+
 export const INITIAL_STUDENT_PROFILE: StudentProfile = {
   id: 'stu-101',
   name: 'Aravind Kumar',

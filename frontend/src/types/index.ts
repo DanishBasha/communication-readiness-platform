@@ -1,15 +1,17 @@
 export type UserRole = 
-  | 'STUDENT'
-  | 'FACULTY_MENTOR'
+  | 'SUPER_ADMIN'
   | 'PROGRAM_ADMIN'
+  | 'FACULTY_MENTOR'
   | 'TRAINER'
-  | 'PLACEMENT_COORDINATOR';
+  | 'PLACEMENT_COORDINATOR'
+  | 'STUDENT';
 
 export type StudentTrack = 
   | 'HOPE_ELITE'
   | 'HOPE_NON_ELITE'
   | 'PEP'
-  | 'DEPARTMENT';
+  | 'DEPARTMENT'
+  | 'EXTERNAL';
 
 export type Difficulty = 'EASY' | 'MEDIUM' | 'ADVANCED';
 
@@ -105,6 +107,7 @@ export interface StudentProfile {
 
 export interface TrainerTenure {
   id: string;
+  userId?: string;
   trainerName: string;
   trainerEmail: string;
   companyOrInstitute: string;
@@ -123,3 +126,15 @@ export interface InterviewAssignment {
   dueDate: string;
   isMandatory: boolean;
 }
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  rollNumber?: string;
+  department?: string;
+  track?: StudentTrack;
+  studentId?: string;
+}
+
