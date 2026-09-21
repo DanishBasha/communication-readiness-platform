@@ -1,37 +1,88 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, UploadCloud, CheckCircle2, FileText, Sparkles, ArrowRight } from 'lucide-react';
+import { X, UploadCloud, CheckCircle2, FileText, Sparkles, ArrowRight, Clipboard, AlertCircle } from 'lucide-react';
 
 interface ResumeUploadModalProps {
   onClose: () => void;
 }
 
 export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose }) => {
-  const { student } = useApp();
+  const { student, uploadResumeData } = useApp();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'upload' | 'extracted'>('upload');
+  const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file');
+  const [pastedText, setPastedText] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'upload' | 'extracted'>(student.resume ? 'extracted' : 'upload');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleSimulateUpload = () => {
+  const processFile = async (file: File) => {
+    setErrorMessage(null);
     setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      const formData = new FormData();
+      formData.append('resume', file);
+      await uploadResumeData(formData);
       setActiveTab('extracted');
-    }, 800);
+    } catch (err: any) {
+      console.error('Resume upload error:', err);
+      setErrorMessage(err.message || 'Failed to parse resume. Please try pasting the text instead.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const handlePastedTextSubmit = async () => {
+    if (!pastedText.trim() || pastedText.trim().length < 20) {
+      setErrorMessage('Please paste at least 20 characters of resume content.');
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsProcessing(true);
+    try {
+      await uploadResumeData({
+        resumeText: pastedText,
+        fileName: 'Pasted_Resume_Profile.txt'
+      });
+      setActiveTab('extracted');
+    } catch (err: any) {
+      console.error('Text parsing error:', err);
+      setErrorMessage(err.message || 'Failed to parse text. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-      <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
         
-        <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
+        {/* Header */}
+        <div className="p-5 border-b border-neutral-200 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2.5">
             <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center text-neutral-800">
               <FileText className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Student Resume Intake</h3>
-              <p className="text-xs text-neutral-500">Grounds AI mock interview questions in your verified projects</p>
+              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Student Resume Intake & Grounding</h3>
+              <p className="text-xs text-neutral-500">Groq AI extracts your technical stack to personalize mock interview questions</p>
             </div>
           </div>
           <button 
@@ -42,37 +93,133 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        {/* Tab switcher */}
+        <div className="flex border-b border-neutral-200 px-6 pt-3 bg-neutral-50/50 shrink-0">
+          <button
+            onClick={() => setActiveTab('upload')}
+            className={`pb-2.5 text-xs font-medium border-b-2 mr-6 transition-colors ${
+              activeTab === 'upload' 
+                ? 'border-neutral-900 text-neutral-900 font-semibold' 
+                : 'border-transparent text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            Upload / Paste Resume
+          </button>
+          <button
+            onClick={() => setActiveTab('extracted')}
+            disabled={!student.resume}
+            className={`pb-2.5 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === 'extracted' 
+                ? 'border-neutral-900 text-neutral-900 font-semibold' 
+                : 'border-transparent text-neutral-500 hover:text-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed'
+            }`}
+          >
+            Parsed Technical Profile {student.resume && '✓'}
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 space-y-5 overflow-y-auto">
+          {errorMessage && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           {activeTab === 'upload' ? (
             <div className="space-y-4">
-              <div 
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleSimulateUpload(); }}
-                onClick={handleSimulateUpload}
-                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-                  isDragging 
-                    ? 'border-neutral-900 bg-neutral-50' 
-                    : 'border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50/50'
-                }`}
-              >
-                <div className="w-12 h-12 rounded-xl bg-neutral-100 text-neutral-600 flex items-center justify-center mx-auto mb-3">
-                  <UploadCloud className="w-6 h-6" />
-                </div>
-                <p className="text-xs font-semibold text-neutral-800">
-                  Click to browse or drop your PDF resume here
-                </p>
-                <p className="text-[11px] text-neutral-400 mt-1">
-                  Supported formats: PDF, DOCX (Max 10MB)
-                </p>
-
-                {isProcessing && (
-                  <div className="mt-4 flex items-center justify-center space-x-2 text-xs text-neutral-600 font-medium">
-                    <Sparkles className="w-4 h-4 animate-spin text-neutral-800" />
-                    <span>Parsing technical competencies with AI...</span>
-                  </div>
-                )}
+              {/* Input mode toggle: File vs Paste */}
+              <div className="flex items-center space-x-2 bg-neutral-100 p-1 rounded-lg w-fit">
+                <button
+                  type="button"
+                  onClick={() => setUploadMode('file')}
+                  className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                    uploadMode === 'file' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <UploadCloud className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
+                  PDF / Document
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUploadMode('text')}
+                  className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                    uploadMode === 'text' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <Clipboard className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
+                  Paste Text
+                </button>
               </div>
+
+              {uploadMode === 'file' ? (
+                <>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept=".pdf,.txt,.docx"
+                    className="hidden"
+                  />
+                  <div 
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+                      isDragging 
+                        ? 'border-neutral-900 bg-neutral-50' 
+                        : 'border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50/50'
+                    }`}
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-neutral-100 text-neutral-600 flex items-center justify-center mx-auto mb-3">
+                      <UploadCloud className="w-6 h-6" />
+                    </div>
+                    <p className="text-xs font-semibold text-neutral-800">
+                      Click to choose your resume file or drag & drop here
+                    </p>
+                    <p className="text-[11px] text-neutral-400 mt-1">
+                      Supports PDF, TXT, DOCX (Max 10MB)
+                    </p>
+
+                    {isProcessing && (
+                      <div className="mt-4 flex items-center justify-center space-x-2 text-xs text-neutral-800 font-medium bg-neutral-100 py-2 px-3 rounded-lg w-fit mx-auto">
+                        <Sparkles className="w-4 h-4 animate-spin text-neutral-900" />
+                        <span>Extracting skills & projects with Groq AI...</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <textarea
+                    rows={6}
+                    value={pastedText}
+                    onChange={(e) => setPastedText(e.target.value)}
+                    placeholder="Paste your complete resume text here (experience, technical projects, languages, frameworks, education)..."
+                    className="w-full text-xs font-mono p-3 bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:border-neutral-900 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    disabled={isProcessing || !pastedText.trim()}
+                    onClick={handlePastedTextSubmit}
+                    className="w-full bg-neutral-900 hover:bg-black text-white text-xs font-medium py-2.5 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                        <span>Parsing Resume with Groq AI...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Extract Technical Profile</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {student.resume && (
                 <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3.5 flex items-center justify-between">
@@ -82,14 +229,15 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
                     </div>
                     <div>
                       <p className="text-xs font-medium text-neutral-800">{student.resume.fileName}</p>
-                      <p className="text-[10px] text-neutral-400 font-mono">Parsed {student.resume.parsedAt} · Verified</p>
+                      <p className="text-[10px] text-neutral-400 font-mono">Parsed {student.resume.parsedAt} · Active Grounding</p>
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setActiveTab('extracted')}
                     className="text-xs font-medium text-neutral-700 hover:text-black flex items-center"
                   >
-                    <span>Review data</span>
+                    <span>View parsed details</span>
                     <ArrowRight className="w-3 h-3 ml-1" />
                   </button>
                 </div>
@@ -97,47 +245,132 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
             </div>
           ) : (
             <div className="space-y-4">
+              {student.resume?.summary && (
+                <div>
+                  <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wider mb-1.5 font-mono">
+                    Candidate AI Profile Summary
+                  </p>
+                  <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 text-xs text-neutral-700 leading-relaxed">
+                    {student.resume.summary}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wider mb-2 font-mono">
-                  Extracted Technical Skills
+                  Extracted Technical Stack
                 </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {student.resume?.skills.languages.concat(student.resume?.skills.frameworks || []).map((skill: string, idx: number) => (
-                    <span 
-                      key={idx}
-                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-neutral-100 text-neutral-800 border border-neutral-200 font-mono"
-                    >
-                      {skill}
-                    </span>
-                  ))}
+                <div className="space-y-2">
+                  {student.resume?.skills.languages && student.resume.skills.languages.length > 0 && (
+                    <div className="flex items-start space-x-2">
+                      <span className="text-[11px] font-mono text-neutral-500 w-24 shrink-0 pt-1">Languages:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {student.resume.skills.languages.map((skill, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded text-[11px] font-medium bg-neutral-100 text-neutral-800 border border-neutral-200 font-mono">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {student.resume?.skills.frameworks && student.resume.skills.frameworks.length > 0 && (
+                    <div className="flex items-start space-x-2">
+                      <span className="text-[11px] font-mono text-neutral-500 w-24 shrink-0 pt-1">Frameworks:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {student.resume.skills.frameworks.map((skill, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-800 border border-blue-200 font-mono">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {student.resume?.skills.databases && student.resume.skills.databases.length > 0 && (
+                    <div className="flex items-start space-x-2">
+                      <span className="text-[11px] font-mono text-neutral-500 w-24 shrink-0 pt-1">Databases:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {student.resume.skills.databases.map((skill, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {student.resume?.skills.tools && student.resume.skills.tools.length > 0 && (
+                    <div className="flex items-start space-x-2">
+                      <span className="text-[11px] font-mono text-neutral-500 w-24 shrink-0 pt-1">Tools / Cloud:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {student.resume.skills.tools.map((skill, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-50 text-purple-800 border border-purple-200 font-mono">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div>
                 <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wider mb-2 font-mono">
-                  Verified Project Archetype
+                  Extracted Projects ({student.resume?.projects.length || 0})
                 </p>
-                <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 text-xs text-neutral-700 leading-relaxed">
-                  {student.resume?.projects[0]?.title || 'Distributed Microservices Order Engine'}: {student.resume?.projects[0]?.description || 'High throughput event-driven pipeline handling 1,500 req/sec with Apache Kafka and Spring Boot idempotency guards.'}
+                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                  {student.resume?.projects.map((proj, idx) => (
+                    <div key={idx} className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-neutral-900">{proj.title}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {proj.techStack?.map((t, i) => (
+                            <span key={i} className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-neutral-200 text-neutral-600">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-neutral-600 text-[11px] leading-relaxed">{proj.description}</p>
+                    </div>
+                  ))}
+                  {(!student.resume?.projects || student.resume.projects.length === 0) && (
+                    <p className="text-xs text-neutral-400 italic">No specific projects detected. Found general technical coursework.</p>
+                  )}
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        <div className="p-4 border-t border-neutral-200 bg-neutral-50/50 flex items-center justify-between">
+        {/* Footer */}
+        <div className="p-4 border-t border-neutral-200 bg-neutral-50/50 flex items-center justify-between shrink-0">
           <span className="text-[11px] text-neutral-500 font-medium flex items-center">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mr-1.5" /> Ready for AI Interview Grounding
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mr-1.5" /> 
+            {student.resume ? 'Resume Linked to AI Interview Engine' : 'Select a file to begin'}
           </span>
-          <button
-            onClick={onClose}
-            className="bg-neutral-900 hover:bg-black text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors shadow-xs"
-          >
-            Done
-          </button>
+          <div className="flex items-center space-x-2">
+            {activeTab === 'extracted' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('upload')}
+                className="text-xs font-medium px-3 py-2 text-neutral-600 hover:text-neutral-900 transition-colors"
+              >
+                Upload Different File
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="bg-neutral-900 hover:bg-black text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors shadow-xs"
+            >
+              Done
+            </button>
+          </div>
         </div>
 
       </div>
     </div>
   );
 };
+
