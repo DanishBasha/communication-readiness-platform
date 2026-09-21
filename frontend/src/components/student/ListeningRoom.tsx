@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { LISTENING_PASSAGE } from '../../data/mockData';
 import { 
@@ -16,19 +16,97 @@ export const ListeningRoom: React.FC = () => {
   const { endInterview } = useApp();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [replaysUsed, setReplaysUsed] = useState(1);
+  const [replaysUsed, setReplaysUsed] = useState(0);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [currentAnswer, setCurrentAnswer] = useState(
-    "The payment settlement gateway requires sub-50ms latency across 5 distinct partner banks, with Kafka consumer group idempotency to guarantee zero double transactions."
-  );
+  const [currentAnswer, setCurrentAnswer] = useState("");
+
+  const recognitionRef = useRef<any>(null);
 
   const questions = LISTENING_PASSAGE.questions;
   const currentQ = questions[currentQuestionIndex];
   const questionNumber = currentQuestionIndex + 1;
   const totalQuestions = questions.length;
 
-  const handleNextTurn = () => {
+  useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+    };
+  }, []);
+
+  const playAudioPassage = () => {
+    if (!('speechSynthesis' in window)) return;
+
+    if (isPlaying) {
+      window.speechSynthesis.cancel();
+      setIsPlaying(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(LISTENING_PASSAGE.narrativeText);
+    utterance.rate = 0.95; // Slightly measured rate for technical listening
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha')));
+    if (preferredVoice) utterance.voice = preferredVoice;
+
+    utterance.onstart = () => setIsPlaying(true);
+    utterance.onend = () => setIsPlaying(false);
+    utterance.onerror = () => setIsPlaying(false);
+
+    window.speechSynthesis.speak(utterance);
+    setReplaysUsed(prev => prev + 1);
+  };
+
+  const startRecording = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsPlaying(false);
+    }
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRec) {
+      try {
+        const recognition = new SpeechRec();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event: any) => {
+          let transcript = '';
+          for (let i = 0; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript + ' ';
+          }
+          setCurrentAnswer(transcript.trim());
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+        setIsRecording(true);
+      } catch {
+        setIsRecording(true);
+      }
+    } else {
+      setIsRecording(true);
+    }
+  };
+
+  const stopRecording = () => {
     setIsRecording(false);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+      recognitionRef.current = null;
+    }
+  };
+
+  const handleNextTurn = () => {
+    stopRecording();
     if (currentQuestionIndex + 1 < totalQuestions) {
       setCurrentQuestionIndex(prev => prev + 1);
       setCurrentAnswer('');
@@ -82,16 +160,16 @@ export const ListeningRoom: React.FC = () => {
 
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
+              onClick={playAudioPassage}
               className="flex items-center space-x-2 bg-neutral-900 hover:bg-black text-white px-5 py-2 rounded-xl text-xs font-medium transition-all shadow-xs"
             >
               {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              <span>{isPlaying ? 'Pause Audio' : 'Play Briefing Passage'}</span>
+              <span>{isPlaying ? 'Pause Audio' : 'Play Briefing Passage Aloud'}</span>
             </button>
 
             <button
               disabled={replaysUsed >= 2}
-              onClick={() => setReplaysUsed(prev => prev + 1)}
+              onClick={playAudioPassage}
               className="flex items-center space-x-1.5 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 px-3 py-2 rounded-xl text-xs font-medium transition-colors disabled:opacity-40"
             >
               <RotateCcw className="w-3 h-3" />
@@ -110,36 +188,37 @@ export const ListeningRoom: React.FC = () => {
         </div>
 
         <p className="text-base font-medium text-neutral-900 leading-relaxed">
-          "{currentQ.questionText}"
+          \"{currentQ.questionText}\"
         </p>
 
         <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4">
           <div className="flex items-center justify-between text-[11px] font-medium text-neutral-500 mb-2">
             <span className="flex items-center">
-              <Radio className="w-3 h-3 text-emerald-600 mr-1 animate-pulse" /> Spoken Answer Response
+              <Radio className={`w-3 h-3 mr-1.5 ${isRecording ? 'text-rose-600 animate-pulse' : 'text-neutral-400'}`} />
+              {isRecording ? 'Listening to your microphone...' : 'Spoken Answer Response'}
             </span>
-            <span className="font-mono">Editable Preview</span>
+            <span className="font-mono text-[10px]">Editable Preview</span>
           </div>
           <textarea
             value={currentAnswer}
             onChange={(e) => setCurrentAnswer(e.target.value)}
             rows={3}
             className="w-full bg-white border border-neutral-200 rounded-lg p-2.5 text-xs text-neutral-800 focus:outline-none focus:border-neutral-900 transition-colors resize-none leading-relaxed"
-            placeholder="Speak or verify your auditory retention answer..."
+            placeholder={isRecording ? "Speak your answer now..." : "Click Record Verbal Answer or edit text here..."}
           />
         </div>
 
         <div className="flex items-center justify-between pt-2">
           <button
-            onClick={() => setIsRecording(!isRecording)}
+            onClick={isRecording ? stopRecording : startRecording}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
               isRecording 
-                ? 'bg-rose-600 text-white shadow-sm' 
+                ? 'bg-rose-600 text-white shadow-sm hover:bg-rose-700 animate-pulse' 
                 : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700'
             }`}
           >
             {isRecording ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-neutral-500" />}
-            <span>{isRecording ? 'Mute Mic' : 'Record Verbal Answer'}</span>
+            <span>{isRecording ? 'Stop Mic' : 'Record Verbal Answer'}</span>
           </button>
 
           <button

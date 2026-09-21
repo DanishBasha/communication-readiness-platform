@@ -1,11 +1,13 @@
 node_modules/
 backend/node_modules/
 frontend/node_modules/
-
+backend/node_modules/
 dist/
 backend/dist/
 frontend/dist/
-
+__pycache__/
+*/__pycache__/
+*.pyc
 .env
 .env.*
 backend/.env
