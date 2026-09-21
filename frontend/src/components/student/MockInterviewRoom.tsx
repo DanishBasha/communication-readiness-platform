@@ -28,6 +28,7 @@ declare global {
 
 export const MockInterviewRoom: React.FC = () => {
   const { 
+    student,
     interviewState, 
     submitAnswer
   } = useApp();
@@ -441,6 +442,26 @@ export const MockInterviewRoom: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-3">
+          {/* Speaker Mute/Unmute Toggle */}
+          <button
+            onClick={() => {
+              if (!isMuted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                setIsAiSpeaking(false);
+              }
+              setIsMuted(!isMuted);
+            }}
+            title={isMuted ? 'Unmute Interviewer Voice' : 'Mute Interviewer Voice'}
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              isMuted 
+                ? 'bg-neutral-100 border-neutral-300 text-neutral-500' 
+                : 'bg-neutral-50 border-neutral-200 text-neutral-800'
+            }`}
+          >
+            {isMuted ? <VolumeX className="w-3.5 h-3.5 text-neutral-400" /> : <Volume2 className="w-3.5 h-3.5 text-neutral-700" />}
+            <span className="font-mono">{isMuted ? 'Voice Off' : 'Voice On'}</span>
+          </button>
+
           <div className="flex items-center space-x-1.5 bg-neutral-50 border border-neutral-200 px-3 py-1 rounded-full text-xs font-medium text-neutral-700 font-mono">
             <ShieldAlert className="w-3.5 h-3.5 text-neutral-500" />
             <span>Tab Switches: {interviewState.tabSwitches} / 4</span>
@@ -464,7 +485,7 @@ export const MockInterviewRoom: React.FC = () => {
           <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-neutral-900 text-white font-mono">
             QUESTION {questionNumber}
           </span>
-          <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-100 text-neutral-700 border border-neutral-200 font-mono">
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-100 text-neutral-700 border border-neutral-200 font-mono uppercase">
             {currentQ.difficulty} DIFFICULTY
           </span>
           {currentQ.category && (
@@ -632,3 +653,4 @@ export const MockInterviewRoom: React.FC = () => {
     </div>
   );
 };
+
