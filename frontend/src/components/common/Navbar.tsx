@@ -12,11 +12,12 @@ import {
   Sparkles,
   Check,
   KeyRound,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { activeRole, setActiveRole, student, setActiveView } = useApp();
+  const { activeRole, setActiveRole, student, setActiveView, currentUser, logout } = useApp();
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [groqModalOpen, setGroqModalOpen] = useState(false);
   const [groqKeyInput, setGroqKeyInput] = useState('');
@@ -54,7 +55,7 @@ export const Navbar: React.FC = () => {
         })
       });
       if (res.ok) {
-        setGroqStatus({ configured: bool(groqKeyInput), model: 'llama-3.3-70b-versatile' });
+        setGroqStatus({ configured: Boolean(groqKeyInput), model: 'llama-3.3-70b-versatile' });
         setSaveMessage("Groq API key activated successfully!");
         setTimeout(() => {
           setSaveMessage(null);

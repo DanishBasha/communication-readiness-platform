@@ -212,11 +212,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Fallback if backend is not reachable
     setInterviewState({
       isActive: true,
-      sessionId: sessId,
+      sessionId: `ses_${Date.now()}`,
       type,
       turnIndex: 0,
       currentDifficulty: 'EASY',
-      questions: initialQuestions,
+      questions: MOCK_INTERVIEW_QUESTIONS,
       tabSwitches: 0,
       isFlagged: false,
       orbState: 'SPEAKING',
@@ -304,39 +304,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         feedback: 'Good technical reasoning, articulated tradeoffs cleanly.'
       };
 
-    let nextDifficulty: Difficulty = interviewState.currentDifficulty;
-    let nextQTurn: QuestionTurn | null = null;
-    let finalRep: DiagnosticReport | null = null;
+      const updatedQuestions = [...prev.questions];
+      updatedQuestions[prev.turnIndex] = updatedQ;
+
+      const nextTurn = prev.turnIndex + 1;
+      if (nextTurn >= prev.questions.length) {
+        setTimeout(() => endInterview(), 500);
+        return {
+          ...prev,
+          questions: updatedQuestions,
+          orbState: 'IDLE',
+          liveTranscript: ''
+        };
+      }
 
       let nextDifficulty: Difficulty = prev.currentDifficulty;
       if (prev.currentDifficulty === 'EASY') nextDifficulty = 'MEDIUM';
       else if (prev.currentDifficulty === 'MEDIUM') nextDifficulty = 'ADVANCED';
 
-    if (!nextQTurn && !finalRep) {
-      if (interviewState.currentDifficulty === 'EASY') nextDifficulty = 'MEDIUM';
-      else if (interviewState.currentDifficulty === 'MEDIUM') nextDifficulty = 'ADVANCED';
-    }
-
-      if (nextTurn >= prev.questions.length) {
-        setTimeout(() => endInterview(), 500);
-        return prev;
-      }
-      setTimeout(() => endInterview(), 500);
-      return;
-    }
-
-    setInterviewState(prev => ({
-      ...prev,
-      turnIndex: nextTurn,
-      currentDifficulty: nextDifficulty,
-      questions: updatedQuestions,
-      orbState: 'SPEAKING',
-      liveTranscript: ''
-    }));
+      return {
+        ...prev,
+        turnIndex: nextTurn,
+        currentDifficulty: nextDifficulty,
+        questions: updatedQuestions,
+        orbState: 'SPEAKING',
+        liveTranscript: ''
+      };
+    });
   };
 
-  const endInterview = () => {
-    const newReport: DiagnosticReport = {
+  const endInterview = async () => {
+    const report: DiagnosticReport = {
       id: `rep-${Date.now().toString().slice(-4)}`,
       date: new Date().toISOString().split('T')[0],
       sessionType: interviewState.type,
@@ -361,37 +359,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isFlagged: interviewState.isFlagged
     };
 
-    if (!report) {
-      report = {
-        id: `rep-${Date.now().toString().slice(-4)}`,
-        date: new Date().toISOString().split('T')[0],
-        sessionType: interviewState.type,
-        overallScore: Math.floor(Math.random() * 15) + 78,
-        technicalScore: Math.floor(Math.random() * 12) + 82,
-        communicationScore: Math.floor(Math.random() * 14) + 72,
-        averageWpm: Math.floor(Math.random() * 20) + 120,
-        totalFillerWords: Math.floor(Math.random() * 8) + 4,
-        fillerWordBreakdown: { 'uh': 4, 'um': 3, 'like': 2, 'actually': 1 },
-        skillBreakdown: [
-          { skill: 'Java & OOP Principles', score: 92, status: 'STRONG', recommendation: 'Outstanding precision regarding garbage collection and thread lifecycle.' },
-          { skill: 'Database Optimization (PostgreSQL)', score: 78, status: 'MODERATE', recommendation: 'Good knowledge of indexes; brush up on query planner explain output.' },
-          { skill: 'Distributed Messaging (Kafka)', score: 85, status: 'STRONG', recommendation: 'Clearly justified consumer group partitions and fault tolerance.' },
-          { skill: 'System Design & Tradeoffs', score: 58, status: 'NEEDS_WORK', recommendation: 'Review rate limiting algorithms (Token Bucket vs Leaky Bucket).' }
-        ],
-        actionableNextSteps: [
-          'Maintain current cadence! Your speaking rate of 128 WPM is right in the sweet spot (120–150 WPM).',
-          'Watch out for repeating "actually" at the start of technical sentences.',
-          'Study rate-limiting algorithms to polish your distributed system architecture answers.'
-        ],
-        tabSwitches: interviewState.tabSwitches,
-        isFlagged: interviewState.isFlagged
-      };
-    }
-
     setLatestReport(report);
     setStudent(prev => ({
       ...prev,
-      recentReports: [report!, ...prev.recentReports]
+      recentReports: [report, ...prev.recentReports]
     }));
 
     setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
@@ -484,16 +455,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const uploadResumeData = async (resume: ParsedResume) => {
-    setStudent(prev => ({ ...prev, resume }));
+  const uploadResumeData = async (payload: FormData | { resumeText: string; fileName?: string } | ParsedResume): Promise<ParsedResume> => {
+    let parsed: ParsedResume;
     try {
-      await fetch(`${BACKEND_API_BASE}/students/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resume })
-      });
+      parsed = await api.student.uploadResume(student.id || 'stu-21cs1084', payload);
     } catch {
-      // Offline fallback
+      if ('skills' in payload && 'projects' in payload) {
+        parsed = payload as ParsedResume;
+      } else {
+        parsed = {
+          fileName: 'Uploaded_Resume.pdf',
+          parsedAt: new Date().toISOString().split('T')[0],
+          summary: 'Full-Stack Developer with hands-on experience in Java, Spring Boot, React, and scalable cloud applications.',
+          skills: {
+            languages: ['Java', 'TypeScript', 'SQL'],
+            frameworks: ['Spring Boot', 'React', 'Tailwind CSS'],
+            databases: ['PostgreSQL', 'Redis'],
+            tools: ['Git', 'Docker']
+          },
+          projects: [
+            {
+              title: 'College Placement Readiness Engine',
+              description: 'Real-time AI diagnostic mock platform',
+              techStack: ['React', 'Node.js', 'PostgreSQL']
+            }
+          ]
+        };
+      }
+    }
+    setStudent(prev => ({ ...prev, resume: parsed }));
+    return parsed;
+  };
+
+  const updateCodingHandles = async (handles: Partial<CodingHandles>): Promise<void> => {
+    setStudent(prev => ({
+      ...prev,
+      codingHandles: {
+        leetcode: handles.leetcode ?? prev.codingHandles?.leetcode ?? '',
+        codechef: handles.codechef ?? prev.codingHandles?.codechef ?? '',
+        hackerrank: handles.hackerrank ?? prev.codingHandles?.hackerrank ?? '',
+        github: handles.github ?? prev.codingHandles?.github ?? ''
+      }
+    }));
+
+    try {
+      if (student.id) {
+        await api.student.updateCodingHandles(student.id, {
+          leetcode: handles.leetcode ?? student.codingHandles?.leetcode ?? '',
+          codechef: handles.codechef ?? student.codingHandles?.codechef ?? '',
+          hackerrank: handles.hackerrank ?? student.codingHandles?.hackerrank ?? '',
+          github: handles.github ?? student.codingHandles?.github ?? ''
+        });
+      }
+    } catch (err) {
+      console.warn('Update coding handles offline fallback:', err);
     }
   };
 

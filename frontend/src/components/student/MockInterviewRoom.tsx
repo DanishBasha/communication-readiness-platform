@@ -16,7 +16,9 @@ import {
   Zap,
   CheckCircle2,
   Clock,
-  Play
+  Play,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 declare global {
@@ -45,6 +47,7 @@ export const MockInterviewRoom: React.FC = () => {
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
   const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
   const [autoConversationMode, setAutoConversationMode] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
 
   // References to keep event handlers, SpeechSynthesis and Web Speech API stable without cyclic re-renders
   const recognitionRef = useRef<any>(null);
@@ -447,7 +450,7 @@ export const MockInterviewRoom: React.FC = () => {
             onClick={() => {
               if (!isMuted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                setIsAiSpeaking(false);
+                setIsSpeakingQuestion(false);
               }
               setIsMuted(!isMuted);
             }}
