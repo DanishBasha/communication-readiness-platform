@@ -1,7 +1,6 @@
 node_modules/
 backend/node_modules/
 frontend/node_modules/
-backend/node_modules/
 dist/
 backend/dist/
 frontend/dist/
@@ -20,3 +19,9 @@ frontend/.env.*
 *.log
 uploads/
 backend/uploads/
+
+# Local reference files (not pushed)
+CLAUDE.md
+AGENTS.md
+DEVELOPMENT.md
+ROADMAP.md
