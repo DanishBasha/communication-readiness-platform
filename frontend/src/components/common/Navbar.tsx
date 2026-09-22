@@ -22,53 +22,43 @@ export const Navbar: React.FC = () => {
   const [groqModalOpen, setGroqModalOpen] = useState(false);
   const [groqKeyInput, setGroqKeyInput] = useState('');
   const [groqStatus, setGroqStatus] = useState<{ configured: boolean; model: string }>({
-    configured: true,
-    model: 'llama-3.3-70b-versatile'
+    configured: false,
+    model: 'Client-side Evaluation Mode'
   });
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  // Poll or check Groq status on mount
+  // Check Groq status on mount
   useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const res = await fetch('http://localhost:5000/api/config/status');
-        if (res.ok) {
-          const data = await res.json();
-          setGroqStatus({
-            configured: data.groq_configured,
-            model: data.groq_model || 'llama-3.3-70b-versatile'
-          });
-        }
-      } catch {}
-    };
-    checkStatus();
+    const savedKey = localStorage.getItem('groq_api_key');
+    if (savedKey) {
+      setGroqKeyInput(savedKey);
+      setGroqStatus({
+        configured: true,
+        model: 'llama-3.3-70b-versatile'
+      });
+    } else {
+      setGroqStatus({
+        configured: false,
+        model: 'Client-side Evaluation Mode'
+      });
+    }
   }, []);
 
-  const handleSaveGroqKey = async () => {
-    try {
-      const res = await fetch('http://localhost:5000/api/config/groq-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: groqKeyInput,
-          model: 'llama-3.3-70b-versatile'
-        })
-      });
-      if (res.ok) {
-        setGroqStatus({ configured: Boolean(groqKeyInput), model: 'llama-3.3-70b-versatile' });
-        setSaveMessage("Groq API key activated successfully!");
-        setTimeout(() => {
-          setSaveMessage(null);
-          setGroqModalOpen(false);
-        }, 1200);
-      }
-    } catch {
-      setSaveMessage("Saved locally for session.");
-      setTimeout(() => {
-        setSaveMessage(null);
-        setGroqModalOpen(false);
-      }, 1200);
+  const handleSaveGroqKey = () => {
+    const key = groqKeyInput.trim();
+    if (key) {
+      localStorage.setItem('groq_api_key', key);
+      setGroqStatus({ configured: true, model: 'llama-3.3-70b-versatile' });
+      setSaveMessage("Groq API key activated locally in browser!");
+    } else {
+      localStorage.removeItem('groq_api_key');
+      setGroqStatus({ configured: false, model: 'Client-side Evaluation Mode' });
+      setSaveMessage("Reset to client-side evaluation mode.");
     }
+    setTimeout(() => {
+      setSaveMessage(null);
+      setGroqModalOpen(false);
+    }, 1200);
   };
 
   const bool = (val: any) => Boolean(val && val.trim().length > 0);

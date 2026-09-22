@@ -21,8 +21,6 @@ import {
 } from '../data/mockData';
 import { api } from '../services/api';
 
-const BACKEND_API_BASE = 'http://localhost:5000/api';
-
 interface InterviewSessionState {
   isActive: boolean;
   sessionId?: string;
@@ -156,15 +154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         if (interviewState.sessionId) {
-          try {
-            await fetch(`${BACKEND_API_BASE}/interview/proctor-event`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sessionId: interviewState.sessionId })
-            });
-          } catch {
-            // Offline fallback
-          }
+          api.interview.recordProctorEvent(interviewState.sessionId, 'TAB_SWITCH').catch(() => {});
         }
       }
     };
@@ -177,118 +167,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveView(type === 'MOCK_INTERVIEW' ? 'INTERVIEW_ROOM' : 'LISTENING_ROOM');
 
     try {
-      const res = await fetch(`${BACKEND_API_BASE}/interview/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, candidateId: student.id })
+      const data = await api.interview.start(student.id || 'stu-21cs1084', type);
+      setInterviewState({
+        isActive: true,
+        sessionId: data.sessionId,
+        type,
+        turnIndex: 0,
+        currentDifficulty: data.firstQuestion.difficulty,
+        questions: [data.firstQuestion],
+        tabSwitches: 0,
+        isFlagged: false,
+        orbState: 'SPEAKING',
+        liveTranscript: ''
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        const serverSession = data.session;
-        setInterviewState({
-          isActive: true,
-          sessionId: serverSession.id,
-          type,
-          turnIndex: 0,
-          currentDifficulty: (serverSession.currentDifficulty as Difficulty) || 'EASY',
-          questions: serverSession.questions.map((q: any) => ({
-            id: q.id,
-            questionNumber: q.questionNumber,
-            questionText: q.questionText,
-            difficulty: q.difficulty as Difficulty
-          })),
-          tabSwitches: 0,
-          isFlagged: false,
-          orbState: 'SPEAKING',
-          liveTranscript: ''
-        });
-        return;
-      }
     } catch {
-      console.warn('[AppContext] Node backend unreachable; using local session state.');
+      setInterviewState({
+        isActive: true,
+        sessionId: `ses_${Date.now()}`,
+        type,
+        turnIndex: 0,
+        currentDifficulty: 'EASY',
+        questions: MOCK_INTERVIEW_QUESTIONS,
+        tabSwitches: 0,
+        isFlagged: false,
+        orbState: 'SPEAKING',
+        liveTranscript: ''
+      });
     }
-
-    // Fallback if backend is not reachable
-    setInterviewState({
-      isActive: true,
-      sessionId: `ses_${Date.now()}`,
-      type,
-      turnIndex: 0,
-      currentDifficulty: 'EASY',
-      questions: MOCK_INTERVIEW_QUESTIONS,
-      tabSwitches: 0,
-      isFlagged: false,
-      orbState: 'SPEAKING',
-      liveTranscript: ''
-    });
   };
 
   const submitAnswer = async (answerText: string) => {
     setInterviewState(prev => ({ ...prev, orbState: 'THINKING' }));
 
-    if (interviewState.sessionId) {
-      try {
-        const res = await fetch(`${BACKEND_API_BASE}/interview/submit-turn`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: interviewState.sessionId,
-            answerText
-          })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-
-          if (data.concluded && data.report) {
-            setLatestReport(data.report);
-            setStudent(prev => ({
-              ...prev,
-              recentReports: [data.report, ...prev.recentReports]
-            }));
-            setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
-            setActiveView('REPORT_VIEW');
-            return;
-          }
-
-          if (data.nextQuestion) {
-            setInterviewState(prev => {
-              const updatedQuestions = [...prev.questions];
-              updatedQuestions[prev.turnIndex] = {
-                ...updatedQuestions[prev.turnIndex],
-                studentAnswer: answerText,
-                technicalScore: data.evaluation.technical_score,
-                communicationScore: data.evaluation.communication_score,
-                wpm: data.evaluation.words_per_minute,
-                fillerWords: data.evaluation.total_fillers,
-                feedback: data.evaluation.feedback,
-                strengths: data.evaluation.strengths,
-                weaknesses: data.evaluation.weaknesses
-              };
-
-              const nextQ: QuestionTurn = {
-                id: data.nextQuestion.id,
-                questionNumber: data.nextQuestion.questionNumber,
-                questionText: data.nextQuestion.questionText,
-                difficulty: data.nextQuestion.difficulty as Difficulty
-              };
-
-              return {
-                ...prev,
-                turnIndex: prev.turnIndex + 1,
-                currentDifficulty: data.nextQuestion.difficulty as Difficulty,
-                questions: [...updatedQuestions, nextQ],
-                orbState: 'SPEAKING',
-                liveTranscript: ''
-              };
-            });
-            return;
-          }
+    const sessId = interviewState.sessionId || `ses_${Date.now()}`;
+    try {
+      const res = await api.interview.submitAnswer(sessId, answerText);
+      if (res) {
+        if (res.isCompleted && res.finalReport) {
+          setLatestReport(res.finalReport);
+          setStudent(prev => ({
+            ...prev,
+            recentReports: [res.finalReport!, ...prev.recentReports]
+          }));
+          setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
+          setActiveView('REPORT_VIEW');
+          return;
         }
-      } catch (e) {
-        console.warn('[AppContext] Submit turn failed via backend; using local evaluator.');
+
+        if (res.nextQuestion && res.turnEvaluation) {
+          setInterviewState(prev => {
+            const updatedQuestions = [...prev.questions];
+            updatedQuestions[prev.turnIndex] = res.turnEvaluation!;
+            return {
+              ...prev,
+              turnIndex: prev.turnIndex + 1,
+              currentDifficulty: res.nextQuestion!.difficulty as Difficulty,
+              questions: [...updatedQuestions, res.nextQuestion!],
+              orbState: 'SPEAKING',
+              liveTranscript: ''
+            };
+          });
+          return;
+        }
       }
+    } catch (e) {
+      console.warn('[AppContext] Submit turn evaluation error:', e);
     }
 
     // Local in-memory advance fallback
@@ -434,11 +377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     }));
 
-    try {
-      await fetch(`${BACKEND_API_BASE}/students/criteria/${taskId}`, { method: 'PATCH' });
-    } catch {
-      // Offline fallback
-    }
+    api.tasks.toggleTask(student.id || 'stu-21cs1084', taskId).catch(() => {});
   };
 
   const verifyCriteriaTask = async (taskId: string) => {
@@ -606,7 +545,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: user.role as UserRole,
       track: 'EXTERNAL',
       studentId: res.studentId
     };

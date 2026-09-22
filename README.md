@@ -34,22 +34,21 @@ The platform prepares students for high-stakes technical campus interviews throu
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ Technology Stack (Frontend Architecture)
 
-### Frontend Prototype (Active)
-* **Framework:** React 18 + Vite
-* **Language:** TypeScript
+* **Framework:** React 19 + Vite 8
+* **Language:** TypeScript (Strict mode)
 * **Styling:** Tailwind CSS v4 (`@tailwindcss/vite`)
-* **Typography:** `Inter` (sans) + `JetBrains Mono` (code/metrics)
+* **Typography:** `Inter` (sans UI) + `JetBrains Mono` (metrics & code)
 * **Icons:** `lucide-react`
-* **Audio Visualizer:** HTML5 Canvas dynamic radial gradient particle orb
-* **Design System:** Mobbin.com minimal high-contrast SaaS aesthetic
-
-### Platform Architecture & Planned Backend
-* **Backend Monolith:** Node.js + Express (Modular domain architecture)
-* **AI Engine & Audio Intelligence:** Python + FastAPI (Librosa audio features, Whisper STT, LLM evaluation chains)
-* **Database:** PostgreSQL + `pgvector` (candidate profiles, interview turns, resume embeddings)
-* **Storage:** S3-compatible bucket (resumes, audio recordings)
+* **Audio & Speech Engine:**
+  * **Web Audio API (`AudioContext` & `AnalyserNode`):** Real-time frequency analyzer driving the responsive 3D **Voice Orb** pulse.
+  * **Web Speech API (`SpeechSynthesis`):** Interviewer natural text-to-speech engine.
+  * **Web Speech Recognition (`webkitSpeechRecognition`):** Candidate continuous speech-to-text with autonomous **Voice Activity Detection (VAD)** and silence turn-completion.
+* **Client-Side AI & Groq Integration:**
+  * Direct browser-to-API inference using Groq (`llama-3.3-70b-versatile`) when an API key is entered.
+  * Deterministic offline intelligent diagnostic evaluator (WPM calculation, filler word density, technical scoring).
+* **Storage & Persistence:** LocalStorage state management across all 5 stakeholder portals.
 
 ---
 
@@ -58,43 +57,29 @@ The platform prepares students for high-stakes technical campus interviews throu
 ```text
 communication-readiness-platform/
 ├── README.md                      # Primary project overview and guide
-├── PROJECT_BLUEPRINT.md           # Master engineering manual & SQL DDL schemas
+├── PROJECT_BLUEPRINT.md           # Master engineering manual & UML specifications
+├── package.json                   # Root package script runner
+├── start-all.ps1 / start-all.bat  # One-click startup scripts
 ├── docs/
 │   ├── architecture/              # Complete UML architecture specification
-│   │   ├── GALLERY.md             # Visual diagram overview gallery
-│   │   ├── CLASS_DIAGRAM.md       # Domain class structure & models
-│   │   ├── SYSTEM_ARCHITECTURE.md # 5-Layer system architecture
-│   │   ├── USE_CASE_DIAGRAM.md    # Stakeholder use cases
-│   │   ├── SEQUENCE_DIAGRAM.md    # Turn-by-turn interview sequence
-│   │   ├── DATA_MODEL.md          # Relational ER data model
-│   │   └── images/                # Generated architecture diagrams
-│   └── ui/
-│       └── UI_BLUEPRINT.md        # UI/UX design architecture & specifications
-└── frontend/                      # Interactive React 18 + Vite application
+│   └── ui/                        # UI/UX design architecture & specifications
+└── frontend/                      # Pure React 19 + TypeScript application
     ├── index.html
     ├── vite.config.ts
     ├── package.json
     └── src/
         ├── App.tsx                # Main view router
-        ├── index.css              # Mobbin typography, reset & Tailwind CSS v4
+        ├── index.css              # Mobbin typography & Tailwind CSS v4
         ├── types/                 # TypeScript interfaces (roles, sessions, reports)
         ├── context/               # Global state (AppContext & role switching)
+        ├── services/              # Client-side API layer & direct Groq client
         ├── data/                  # Mock data (21 PEP tracks, mentees, questions)
         └── components/
-            ├── common/
-            │   └── Navbar.tsx     # Sticky header, ⌘K search & role switcher
-            ├── student/
-            │   ├── StudentDashboard.tsx    # Bento hero, action cards & checklist
-            │   ├── MockInterviewRoom.tsx   # Proctoring, turns & transcript
-            │   ├── ListeningRoom.tsx       # Waveform audio player & verbal Q&A
-            │   ├── VoiceOrb.tsx            # Animated speech canvas visualizer
-            │   ├── ResumeUploadModal.tsx   # Drag-and-drop resume intake
-            │   └── DiagnosticReportView.tsx# WPM pace, fillers & score analysis
-            └── portals/
-                ├── PlacementCoordinatorPortal.tsx # Super admin KPI dashboard
-                ├── ProgramAdminPortal.tsx         # HOPE & 21 PEP track administration
-                ├── FacultyMentorPortal.tsx        # 25-mentee roster & verification
-                └── TrainerPortal.tsx              # 10-15 day active tenure dashboard
+            ├── auth/              # Sign-in & registration modals
+            ├── common/            # Navbar, search, modals & header
+            ├── landing/           # Landing page with hero & features
+            ├── student/           # Dashboard, Voice Room, Listening Room, Reports
+            └── portals/           # Super Admin, Program Admin, Mentor, Trainer
 ```
 
 ---
@@ -105,27 +90,26 @@ communication-readiness-platform/
 * **Node.js**: v18.0 or higher
 * **npm**: v9.0 or higher
 
-### Running the Frontend Prototype Locally
+### Launch the Application
 
-1. **Navigate to the frontend directory:**
-   ```bash
-   cd frontend
-   ```
-
-2. **Install dependencies:**
+1. **Install dependencies:**
    ```bash
    npm install
+   npm --prefix frontend install
    ```
 
-3. **Start the development server:**
+2. **Start the development server:**
    ```bash
    npm run dev
    ```
+   *Or double-click `start-all.bat` / run `./start-all.ps1`.*
 
-4. **Open your browser:**
-   Navigate to **[http://localhost:5173/](http://localhost:5173/)**
+3. **Open in your browser:**
+   ```
+   http://localhost:5173/
+   ```
 
-5. **Test Role Switching:**
+4. **Test Role Switching:**
    Click the **Role Selector dropdown** at the top right of the navigation bar to switch between all 5 user roles:
    * `Student Portal` $\rightarrow$ Run a mock interview, test tab switching, view scorecard.
    * `Faculty Mentor` $\rightarrow$ Inspect the 25-mentee roster and sign off checklist items.
