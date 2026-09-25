@@ -72,6 +72,35 @@ class ListeningEvaluationResponse(BaseModel):
     missed_key_points: list[str] = Field(default_factory=list)
 
 
+# ── Evaluate Response (multipart audio pipeline) ──────────────────────────────
+
+class EvaluateResponseMetadata(BaseModel):
+    """Metadata submitted alongside the audio file in POST /ai/evaluate-response."""
+    question_text: str
+    difficulty: str = "EASY"
+    turn_number: int = 1
+    domain: str | None = None
+    # Previous turns from Redis context (passed by Node.js)
+    previous_turns: list[PreviousTurn] = Field(default_factory=list)
+
+
+class CombinedEvalResult(BaseModel):
+    """Full evaluation result: STT transcript + LLM scores + audio signal metrics."""
+    transcript: str
+    stt_raw: str                         # raw Whisper text before any cleaning
+    # LLM-derived fields (0-10 scale; Node.js converts to 0-100)
+    technical_score: float = Field(ge=0, le=10)
+    feedback: str
+    strengths: str
+    weaknesses: str
+    next_recommended_difficulty: str     # EASY | MEDIUM | ADVANCED
+    # Audio signal metrics (waveform + transcript, NOT from LLM)
+    pace_wpm: float = 0.0
+    filler_count: int = 0
+    fluency_score: float = 0.0
+    clarity_score: float = 0.0
+
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 
 class ConfigUpdateRequest(BaseModel):

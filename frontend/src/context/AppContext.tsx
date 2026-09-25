@@ -55,6 +55,7 @@ interface AppContextType {
   interviewState: InterviewSessionState;
   startInterview: (type?: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION') => Promise<void>;
   submitAnswer: (answerText: string) => Promise<void>;
+  submitAudioAnswer: (audioBlob: Blob) => Promise<void>;
   endInterview: () => Promise<void>;
   recordTabSwitch: () => Promise<void>;
   latestReport: DiagnosticReport | null;
@@ -138,6 +139,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     orbState: 'SPEAKING',
     liveTranscript: ''
   });
+
+  // ── Hydrate auth state on mount ──────────────────────────────────────────
+  // If a stored token exists, validate it against the backend and restore user state.
+  // This ensures that a page refresh picks up the correct user role/name rather than
+  // relying solely on the cached localStorage auth_user JSON.
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
+
+    api.auth.me()
+      .then(data => {
+        const authUser: AuthUser = {
+          id: data.user.id,
+          name: data.user.name,
+          email: data.user.email,
+          role: data.user.role as any,
+          studentId: data.studentId ?? undefined,
+        };
+        setCurrentUser(authUser);
+        setActiveRole(data.user.role as any);
+        setIsAuthenticated(true);
+        localStorage.setItem('auth_user', JSON.stringify(authUser));
+
+        if (data.user.role === 'STUDENT' && data.studentId) {
+          api.student.getProfile(data.studentId)
+            .then(prof => {
+              setStudent(prof);
+              setLatestReport(prof.recentReports?.[0] ?? null);
+            })
+            .catch(() => {}); // Profile fetch failure is non-critical
+        }
+      })
+      .catch(() => {
+        // Token invalid or backend unreachable — clear stale auth state
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle Tab switches when in interview room with proctor audit sync
   useEffect(() => {
@@ -272,6 +313,231 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         questions: updatedQuestions,
         orbState: 'SPEAKING',
         liveTranscript: ''
+      };
+    });
+  };
+
+  /**
+   * submitAudioAnswer — full audio pipeline:
+   *   1. POST WAV blob + question metadata → FastAPI /ai/evaluate-response
+   *   2. Backend: Groq Whisper STT ∥ waveform analysis → LLM technical eval
+   *   3. Map 0-10 backend scores → 0-100 for display
+   *   4. Advance turn; generate next question from /ai/generate-question (with mock-bank fallback)
+   */
+  const submitAudioAnswer = async (audioBlob: Blob) => {
+    setInterviewState(prev => ({ ...prev, orbState: 'THINKING' }));
+
+    const currentIdx = interviewState.turnIndex;
+    const currentQ = interviewState.questions[currentIdx];
+
+    // Build previous-turn context for the LLM (backend uses it for adaptive questioning)
+    const previousTurns = interviewState.questions
+      .slice(0, currentIdx)
+      .map(q => ({
+        question_text: q.questionText,
+        student_answer: q.studentAnswer || '',
+        difficulty: q.difficulty as string,
+        technical_score: q.technicalScore != null ? q.technicalScore / 10 : null,
+        feedback: q.feedback || null,
+      }));
+
+    const metadata = {
+      question_text: currentQ?.questionText || '',
+      difficulty: interviewState.currentDifficulty as string,
+      turn_number: currentIdx + 1,
+      domain: student.pepDomain || null,
+      previous_turns: previousTurns,
+    };
+
+    const result = await api.interview.evaluateAudio(audioBlob, metadata);
+
+    // ── Fallback: ai-service unreachable ──────────────────────────────────────
+    if (!result) {
+      console.warn('[submitAudioAnswer] ai-service unavailable — advancing with placeholder scores');
+      setInterviewState(prev => {
+        const q = prev.questions[prev.turnIndex];
+        const updated: QuestionTurn = {
+          ...q,
+          studentAnswer: '(audio submitted — evaluation pending)',
+          technicalScore: 80,
+          communicationScore: 75,
+          wpm: 130,
+          fillerWords: 0,
+          feedback: 'AI evaluation service is offline. Scores are placeholders.',
+          strengths: '',
+          weaknesses: '',
+        };
+        const updatedQs = [...prev.questions];
+        updatedQs[prev.turnIndex] = updated;
+
+        const nextTurn = prev.turnIndex + 1;
+        if (nextTurn >= prev.questions.length) {
+          setTimeout(() => endInterview(), 500);
+          return { ...prev, questions: updatedQs, orbState: 'IDLE', liveTranscript: '' };
+        }
+        const nextDiff: Difficulty =
+          prev.currentDifficulty === 'EASY' ? 'MEDIUM' : 'ADVANCED';
+        return {
+          ...prev,
+          turnIndex: nextTurn,
+          currentDifficulty: nextDiff,
+          questions: updatedQs,
+          orbState: 'SPEAKING',
+          liveTranscript: '',
+        };
+      });
+      return;
+    }
+
+    // ── Map backend scores (0-10) → display scale (0-100) ────────────────────
+    const technicalScore = Math.round(result.technical_score * 10);
+    // Communication = average of fluency (pace quality) + clarity (filler-free ratio)
+    const communicationScore = Math.round((result.fluency_score + result.clarity_score) / 2);
+
+    const evaluatedTurn: QuestionTurn = {
+      ...(interviewState.questions[currentIdx] || {}),
+      studentAnswer: result.transcript || result.stt_raw || '',
+      technicalScore,
+      communicationScore,
+      wpm: Math.round(result.pace_wpm) || 0,
+      fillerWords: result.filler_count,
+      feedback: result.feedback,
+      strengths: result.strengths,
+      weaknesses: result.weaknesses,
+    };
+
+    const nextDiff = (result.next_recommended_difficulty || 'MEDIUM') as Difficulty;
+    const isCompleted = currentIdx >= 2;
+
+    // ── Session complete → build diagnostic report ────────────────────────────
+    if (isCompleted) {
+      const overallScore = Math.round((technicalScore + communicationScore) / 2);
+      const report: DiagnosticReport = {
+        id: `rep-${Date.now().toString().slice(-4)}`,
+        date: new Date().toISOString().split('T')[0],
+        sessionType: interviewState.type,
+        overallScore,
+        technicalScore,
+        communicationScore,
+        averageWpm: Math.round(result.pace_wpm),
+        totalFillerWords: result.filler_count,
+        fillerWordBreakdown: {},
+        skillBreakdown: [
+          {
+            skill: 'Technical Knowledge',
+            score: technicalScore,
+            status: technicalScore >= 80 ? 'STRONG' : technicalScore >= 60 ? 'MODERATE' : 'NEEDS_WORK',
+            recommendation: result.strengths || 'Review core technical concepts.',
+          },
+          {
+            skill: 'Communication Fluency',
+            score: Math.round(result.fluency_score),
+            status: result.fluency_score >= 80 ? 'STRONG' : result.fluency_score >= 60 ? 'MODERATE' : 'NEEDS_WORK',
+            recommendation: `Pace: ${Math.round(result.pace_wpm)} WPM. Ideal range is 120–160 WPM.`,
+          },
+          {
+            skill: 'Speech Clarity',
+            score: Math.round(result.clarity_score),
+            status: result.clarity_score >= 80 ? 'STRONG' : result.clarity_score >= 60 ? 'MODERATE' : 'NEEDS_WORK',
+            recommendation: `Filler words detected: ${result.filler_count}. Aim for ≤3 per response.`,
+          },
+        ],
+        actionableNextSteps: [
+          result.weaknesses,
+          `Recommended next difficulty: ${result.next_recommended_difficulty}.`,
+        ].filter(Boolean) as string[],
+        tabSwitches: interviewState.tabSwitches,
+        isFlagged: interviewState.isFlagged,
+      };
+
+      setLatestReport(report);
+      setStudent(prev => ({ ...prev, recentReports: [report, ...prev.recentReports] }));
+
+      const updatedQs = [...interviewState.questions];
+      updatedQs[currentIdx] = evaluatedTurn;
+      setInterviewState(prev => ({
+        ...prev,
+        questions: updatedQs,
+        isActive: false,
+        orbState: 'IDLE',
+        liveTranscript: '',
+      }));
+      setActiveView('REPORT_VIEW');
+      return;
+    }
+
+    // ── Advance to next turn — generate next question ─────────────────────────
+    const nextDifficulty: Difficulty =
+      nextDiff !== interviewState.currentDifficulty
+        ? nextDiff
+        : interviewState.currentDifficulty === 'EASY'
+          ? 'MEDIUM'
+          : 'ADVANCED';
+
+    let nextQuestion: QuestionTurn | null = null;
+    try {
+      const previousForGen = interviewState.questions.slice(0, currentIdx + 1).map(q => ({
+        question_text: q.questionText,
+        student_answer: q.studentAnswer || '',
+        difficulty: q.difficulty as string,
+        technical_score: q.technicalScore != null ? q.technicalScore / 10 : null,
+        feedback: q.feedback || null,
+      }));
+
+      const genData = await api.interview.generateQuestion({
+        student_name: student.name || 'Student',
+        skills: [
+          ...(student.resume?.skills?.languages || []),
+          ...(student.resume?.skills?.frameworks || []),
+        ],
+        projects: (student.resume?.projects || []).map(p => ({
+          title: p.title,
+          tech_stack: p.techStack,
+          description: p.description,
+        })),
+        previous_turns: previousForGen,
+        difficulty: nextDifficulty,
+        domain: student.pepDomain || null,
+      });
+
+      if (genData) {
+        nextQuestion = {
+          id: `q_${currentIdx + 2}_${Date.now()}`,
+          questionNumber: currentIdx + 2,
+          questionText: genData.question_text || '',
+          difficulty: (genData.difficulty || nextDifficulty) as Difficulty,
+          category: genData.category || undefined,
+        };
+      }
+    } catch {
+      // Network error generating next question — fall through to mock bank
+    }
+
+    if (!nextQuestion || !nextQuestion.questionText) {
+      // Mock bank fallback (same questions used by the text path)
+      const bankQs = [
+        'How did you manage database connection pooling and PostgreSQL index strategy to support horizontal scaling under heavy query load?',
+        'In the event of a network partition where multiple microservice nodes attempt conflicting updates, how would you maintain data consistency without sacrificing latency?',
+      ];
+      nextQuestion = {
+        id: `q_${currentIdx + 2}_${Date.now()}`,
+        questionNumber: currentIdx + 2,
+        questionText: bankQs[currentIdx] || bankQs[bankQs.length - 1],
+        difficulty: nextDifficulty,
+        category: 'Architecture',
+      };
+    }
+
+    setInterviewState(prev => {
+      const updatedQs = [...prev.questions];
+      updatedQs[prev.turnIndex] = evaluatedTurn;
+      return {
+        ...prev,
+        turnIndex: prev.turnIndex + 1,
+        currentDifficulty: nextDifficulty,
+        questions: [...updatedQs, nextQuestion!],
+        orbState: 'SPEAKING',
+        liveTranscript: '',
       };
     });
   };
@@ -568,7 +834,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
-    api.setToken(null);
+    // Invalidate the JWT on the backend (increments token_version so the token
+    // is rejected by subsequent requests). Fire-and-forget — the token value is
+    // captured synchronously inside apiFetch before we clear localStorage below.
+    api.auth.logout().catch(() => {});
+    // Immediately clear local state so the UI resets without waiting for the network
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     setCurrentUser(null);
@@ -601,6 +871,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       interviewState,
       startInterview,
       submitAnswer,
+      submitAudioAnswer,
       endInterview,
       recordTabSwitch,
       latestReport,

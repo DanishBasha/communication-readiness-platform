@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
 
 from app.models.schemas import (
+    CombinedEvalResult,
     ConfigUpdateRequest,
     ConfigUpdateResponse,
+    EvaluateResponseMetadata,
     GeneratedQuestionResponse,
     ListeningEvaluationRequest,
     ListeningEvaluationResponse,
@@ -15,6 +18,7 @@ from app.models.schemas import (
     TurnEvaluationResponse,
 )
 from app.config import settings
+from app.services import audio_analyzer, stt_service
 from app.services.llm_client import get_llm_client, update_llm_config
 
 router = APIRouter(prefix="/ai", tags=["interview"])
@@ -93,6 +97,95 @@ def evaluate_listening(req: ListeningEvaluationRequest) -> ListeningEvaluationRe
         return ListeningEvaluationResponse(**raw)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM error: {exc}") from exc
+
+
+@router.post("/evaluate-response", response_model=CombinedEvalResult)
+async def evaluate_response(
+    audio: UploadFile = File(...),
+    metadata: str = Form(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+) -> CombinedEvalResult:
+    """
+    POST /ai/evaluate-response — multipart/form-data pipeline.
+
+    Architecture (W2):
+      Stage 1 (parallel): STT  ∥  waveform signal analysis
+      Stage 2 (sequential): LLM evaluation (needs transcript from STT)
+      Stage 3 (sync): merge transcript-derived filler count into audio metrics
+
+    The audio file is expected as WAV (16 kHz mono) produced by the VAD hook.
+    Node.js passes Redis session context as `previous_turns` in the metadata JSON.
+    """
+    try:
+        meta = EvaluateResponseMetadata.model_validate_json(metadata)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid metadata JSON: {exc}") from exc
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio payload")
+
+    # ── Stage 1: STT and signal analysis in parallel ──────────────────────────
+    stt_task = asyncio.create_task(stt_service.transcribe(audio_bytes))
+    signal_task = asyncio.create_task(audio_analyzer.analyze_signal(audio_bytes))
+
+    transcript, signal_metrics = await asyncio.gather(stt_task, signal_task)
+
+    # ── Stage 2: LLM evaluation (needs transcript) ────────────────────────────
+    history_lines = ""
+    if meta.previous_turns:
+        lines = [
+            f"Q{i+1} [{t.difficulty}]: {t.question_text} → score {t.technical_score}"
+            for i, t in enumerate(meta.previous_turns)
+        ]
+        history_lines = "\nPrevious turns:\n" + "\n".join(lines)
+
+    eval_prompt = (
+        "You are an interview evaluator. Score the student's spoken answer.\n"
+        f"Question [{meta.difficulty}]: {meta.question_text}\n"
+        f"Student transcript: {transcript or '(no speech detected)'}\n"
+        f"Turn number: {meta.turn_number}"
+        + (f"\nDomain: {meta.domain}" if meta.domain else "")
+        + history_lines
+        + "\n\nRespond with valid JSON: "
+        '{"technical_score": 0-10, "feedback": "str", "strengths": "str", '
+        '"weaknesses": "str", "next_recommended_difficulty": "EASY"|"MEDIUM"|"ADVANCED"}'
+    )
+
+    try:
+        raw = get_llm_client().evaluate_turn(eval_prompt)
+        tech_score = float(raw.get("technical_score", 5))
+        feedback = str(raw.get("feedback", ""))
+        strengths = str(raw.get("strengths", ""))
+        weaknesses = str(raw.get("weaknesses", ""))
+        next_diff = str(raw.get("next_recommended_difficulty", "EASY"))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM error: {exc}") from exc
+
+    # ── Stage 3: merge transcript-derived audio metrics (sync) ────────────────
+    # get_duration requires the raw bytes path; pass duration as None to let
+    # finalize_metrics re-derive it from transcript word count with a known WPM.
+    # For accurate duration we would need to load the waveform again — avoid
+    # double-loading by using the signal_metrics fluency as fallback.
+    final_audio = audio_analyzer.finalize_metrics(
+        signal_metrics=signal_metrics,
+        transcript=transcript,
+        duration_sec=None,  # signal already captured duration-based fluency above
+    )
+
+    return CombinedEvalResult(
+        transcript=transcript,
+        stt_raw=transcript,
+        technical_score=tech_score,
+        feedback=feedback,
+        strengths=strengths,
+        weaknesses=weaknesses,
+        next_recommended_difficulty=next_diff,
+        pace_wpm=final_audio.pace_wpm,
+        filler_count=final_audio.filler_count,
+        fluency_score=final_audio.fluency_score,
+        clarity_score=final_audio.clarity_score,
+    )
 
 
 @router.post("/config", response_model=ConfigUpdateResponse)

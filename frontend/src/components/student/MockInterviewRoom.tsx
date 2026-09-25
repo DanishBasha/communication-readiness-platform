@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { VoiceOrb } from './VoiceOrb';
-import { QuestionTurn } from '../../types';
-import { 
-  ShieldAlert, 
-  Mic, 
-  MicOff, 
-  ChevronRight, 
-  AlertTriangle, 
-  MessageSquare, 
+import { QuestionTurn, Difficulty } from '../../types';
+import { useQuestionTTS } from '../../hooks/useQuestionTTS';
+import { useVoiceCapture } from '../../hooks/useVoiceCapture';
+import {
+  ShieldAlert,
+  Mic,
+  MicOff,
+  ChevronRight,
+  AlertTriangle,
+  MessageSquare,
   X,
   Radio,
   RotateCcw,
@@ -18,22 +20,20 @@ import {
   Clock,
   Play,
   Volume2,
-  VolumeX
+  VolumeX,
+  Loader2
 } from 'lucide-react';
 
-declare global {
-  interface Window {
-    webkitSpeechRecognition: any;
-    SpeechRecognition: any;
-  }
-}
-
 export const MockInterviewRoom: React.FC = () => {
-  const { 
+  const {
     student,
-    interviewState, 
-    submitAnswer
+    interviewState,
+    submitAnswer,
+    submitAudioAnswer,
   } = useApp();
+
+  // Pending audio blob from VAD — set when speech ends, cleared after submission
+  const pendingAudioRef = useRef<Blob | null>(null);
 
   // State flags for UI display
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
@@ -49,11 +49,15 @@ export const MockInterviewRoom: React.FC = () => {
   const [autoConversationMode, setAutoConversationMode] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
 
-  // References to keep event handlers, SpeechSynthesis and Web Speech API stable without cyclic re-renders
-  const recognitionRef = useRef<any>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
+  // W23: Loading state for next-question generation (with 3s bank fallback)
+  const [nextQuestionStatus, setNextQuestionStatus] = useState<
+    'idle' | 'generating' | 'ready' | 'error'
+  >('idle');
+  const nextQuestionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // W5: Track current difficulty for server-side difficulty gating
+  const [currentDifficulty, setCurrentDifficulty] = useState<Difficulty>('EASY');
+
   const silenceTimerRef = useRef<any>(null);
   const countdownIntervalRef = useRef<any>(null);
 
@@ -64,6 +68,55 @@ export const MockInterviewRoom: React.FC = () => {
   const autoModeRef = useRef(true);
   const latestSpeechRef = useRef<string>("");
   const currentQuestionIdRef = useRef<string>("");
+
+  // Feature 5: reusable TTS hook (replaces the inline utterance management)
+  const { speak: ttsSpeakFn, cancel: ttsCancel } = useQuestionTTS();
+
+  // VAD-powered audio capture — fires onSpeechEnd with a 16 kHz mono WAV blob
+  // This blob is sent to the FastAPI ai-service for Whisper STT + signal analysis + LLM eval
+  const { start: vadStart, stop: vadStop } = useVoiceCapture({
+    positiveSpeechThreshold: 0.85,
+    negativeSpeechThreshold: 0.7,
+    minSpeechFrames: 5,
+    onSpeechStart: () => {
+      // Clear any pending silence countdown — VAD is actively detecting speech
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      setSilenceCountdown(null);
+    },
+    onSpeechEnd: (audioBlob: Blob) => {
+      // Audio segment captured — store it and trigger submission
+      if (!isRecordingRef.current || isSubmittingRef.current) return;
+      pendingAudioRef.current = audioBlob;
+      // Small debounce so Web Speech has a chance to flush its final transcript
+      setTimeout(() => {
+        handleAudioSubmit(audioBlob);
+      }, 200);
+    },
+  });
+
+  // W23: bank fallback — fetch a pre-stored question when SSE is slow
+  const fetchBankFallback = useCallback(async (
+    difficulty: Difficulty,
+    domain?: string
+  ): Promise<QuestionTurn | null> => {
+    try {
+      const params = new URLSearchParams({ difficulty });
+      if (domain) params.set('domain', domain);
+      const res = await fetch(`/api/interview/bank-fallback?${params.toString()}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
+        id: data.id || `bank_${Date.now()}`,
+        questionNumber: interviewState.turnIndex + 2,
+        questionText: data.question_text || data.questionText,
+        difficulty,
+        category: data.category,
+      } as QuestionTurn;
+    } catch {
+      return null;
+    }
+  }, [interviewState.turnIndex]);
 
   const currentQ = interviewState.questions[interviewState.turnIndex] || interviewState.questions[0];
   const questionNumber = interviewState.turnIndex + 1;
@@ -78,20 +131,23 @@ export const MockInterviewRoom: React.FC = () => {
   // Clean up all resources on unmount
   useEffect(() => {
     return () => {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+      ttsCancel();
       stopRecordingResources();
+      vadStop();
+      pendingAudioRef.current = null;
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      if (nextQuestionTimeoutRef.current) clearTimeout(nextQuestionTimeoutRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stop recognition and mic streams cleanly
+  // Stop recognition, VAD, and mic streams cleanly
   const stopRecordingResources = () => {
     isRecordingRef.current = false;
     setIsRecording(false);
     setAudioVolume(0.15);
+    vadStop();
 
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
@@ -102,73 +158,58 @@ export const MockInterviewRoom: React.FC = () => {
       countdownIntervalRef.current = null;
     }
     setSilenceCountdown(null);
-
-    if (recognitionRef.current) {
-      try { 
-        recognitionRef.current.abort(); 
-      } catch {}
-      recognitionRef.current = null;
-    }
-
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-
-    if (audioContextRef.current) {
-      try { 
-        audioContextRef.current.close(); 
-      } catch {}
-      audioContextRef.current = null;
-    }
   };
 
-  // Submit Answer to Backend Gateway & FastAPI
+  // Submit Answer — uses audio blob if available, otherwise falls back to text
+  // Called by: manual "Done Speaking" button, and the silence countdown timer (text fallback only)
   const handleExecuteSubmit = async (textToSubmit?: string) => {
+    // If there's a pending audio blob from VAD, prefer the audio path
+    const blob = pendingAudioRef.current;
+    if (blob && blob.size > 0) {
+      await handleAudioSubmit(blob);
+      return;
+    }
+    // No audio blob — text fallback (Web Speech transcript)
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
-
-    // Stop recording and timers
     stopRecordingResources();
 
     const candidateAnswer = (textToSubmit || latestSpeechRef.current || currentSpeechText).trim();
-    const finalAnswer = candidateAnswer || 
-      "I have implemented scalable architecture solutions using reactive patterns, distributed caching, and transactional consistency.";
+    const finalAnswer = candidateAnswer ||
+      'I have implemented scalable architecture solutions using reactive patterns, distributed caching, and transactional consistency.';
 
     try {
       await submitAnswer(finalAnswer);
     } catch (err) {
-      console.error("[MockInterview] Submit error:", err);
+      console.error('[MockInterview] Submit error:', err);
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
-      setCurrentSpeechText("");
-      latestSpeechRef.current = "";
+      setCurrentSpeechText('');
+      latestSpeechRef.current = '';
     }
   };
 
-  // Voice Activity Silence Detector: Auto-submits after natural pause
+  // Live display updater — Web Speech feeds real-time transcript into the text box.
+  // Submission is now driven by VAD onSpeechEnd (audio path) rather than silence timers.
+  // The silence timer here is only a last-resort text fallback when VAD hasn't fired.
   const handleSpeechInput = (transcript: string) => {
     latestSpeechRef.current = transcript;
     setCurrentSpeechText(transcript);
 
     if (!autoModeRef.current) return;
 
-    // Reset silence timer
+    // Reset any existing fallback timer whenever new speech arrives
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    setSilenceCountdown(null);
 
+    // Only arm the text-fallback timer if VAD hasn't produced a blob yet
+    // (i.e. VAD is unavailable or the audio segment hasn't ended)
     const words = transcript.trim().split(/\s+/).filter(Boolean);
-
-    // Once candidate speaks at least 3 words, begin silence monitoring
-    if (words.length >= 3) {
-      let secondsLeft = 3;
+    if (words.length >= 3 && !pendingAudioRef.current) {
+      let secondsLeft = 5; // longer timeout — VAD is primary; this is fallback
       setSilenceCountdown(secondsLeft);
 
       countdownIntervalRef.current = setInterval(() => {
@@ -185,20 +226,52 @@ export const MockInterviewRoom: React.FC = () => {
       silenceTimerRef.current = setTimeout(() => {
         if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
         setSilenceCountdown(null);
-        // Candidate has finished speaking -> execute submit
-        handleExecuteSubmit(latestSpeechRef.current);
-      }, 2600);
-    } else {
-      setSilenceCountdown(null);
+        // VAD hasn't fired — fall back to text-only submission
+        if (!pendingAudioRef.current && !isSubmittingRef.current) {
+          handleExecuteSubmit(latestSpeechRef.current);
+        }
+      }, 5000);
     }
   };
 
-  // Start continuous Speech Recognition & Mic Stream
+  // Submit using the real audio blob → FastAPI pipeline (Whisper + signal + LLM)
+  // Falls back to text-only path if no audio blob is available
+  const handleAudioSubmit = async (audioBlob?: Blob) => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    stopRecordingResources();
+    vadStop();
+
+    const blob = audioBlob || pendingAudioRef.current;
+    pendingAudioRef.current = null;
+
+    try {
+      if (blob && blob.size > 0) {
+        // Primary path: send raw audio to backend for full evaluation
+        await submitAudioAnswer(blob);
+      } else {
+        // Fallback: no audio captured — use whatever Web Speech transcribed
+        const fallbackText = (latestSpeechRef.current || currentSpeechText).trim()
+          || 'I have implemented scalable architecture solutions using reactive patterns, distributed caching, and transactional consistency.';
+        await submitAnswer(fallbackText);
+      }
+    } catch (err) {
+      console.error('[MockInterview] Audio submit error:', err);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      setCurrentSpeechText('');
+      latestSpeechRef.current = '';
+    }
+  };
+
+  // Start VAD-powered mic capture; sets isRecording and handles permission errors
   const startRecording = async () => {
     if (isRecordingRef.current || isSubmittingRef.current) return;
     setMicPermissionError(null);
 
-    // Ensure AI speech synthesis is silenced
+    // Cancel any TTS that might still be playing
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       isSpeakingRef.current = false;
@@ -208,157 +281,46 @@ export const MockInterviewRoom: React.FC = () => {
     isRecordingRef.current = true;
     setIsRecording(true);
 
-    // Initialize Web Audio volume meter for VoiceOrb reactivity
     try {
-      if (!mediaStreamRef.current) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStreamRef.current = stream;
-
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        audioContextRef.current = audioCtx;
-
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        const checkVolume = () => {
-          if (!isRecordingRef.current) return;
-          analyser.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-          const avg = sum / dataArray.length;
-          const normalized = Math.min(1.0, Math.max(0.18, avg / 120));
-          setAudioVolume(normalized);
-          animationFrameRef.current = requestAnimationFrame(checkVolume);
-        };
-        checkVolume();
-      }
-    } catch (err: any) {
-      console.warn("Audio meter setup warning:", err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setMicPermissionError("Microphone access is blocked. Please allow microphone permissions in your browser.");
-      }
-    }
-
-    // Start Web Speech Recognition
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRec) {
-      try {
-        if (recognitionRef.current) {
-          try { recognitionRef.current.abort(); } catch {}
-        }
-
-        const recognition = new SpeechRec();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-
-        recognition.onresult = (event: any) => {
-          let fullTranscript = '';
-          for (let i = 0; i < event.results.length; i++) {
-            fullTranscript += event.results[i][0].transcript + ' ';
-          }
-          const cleaned = fullTranscript.trim();
-          if (cleaned) {
-            handleSpeechInput(cleaned);
-          }
-        };
-
-        recognition.onerror = (event: any) => {
-          if (event.error === 'no-speech') return; // Normal pause in conversation
-          if (event.error === 'not-allowed') {
-            setMicPermissionError("Microphone permission was denied. Please allow microphone access.");
-          }
-        };
-
-        recognition.onend = () => {
-          // Keep recording alive if still in listening mode
-          if (isRecordingRef.current && !isSubmittingRef.current && !isSpeakingRef.current) {
-            try {
-              recognition.start();
-            } catch {}
-          }
-        };
-
-        recognition.start();
-        recognitionRef.current = recognition;
-      } catch (e) {
-        console.warn("SpeechRec error:", e);
+      await vadStart();
+    } catch (e: any) {
+      console.warn('[VAD] Could not start voice activity detection:', e);
+      isRecordingRef.current = false;
+      setIsRecording(false);
+      if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
+        setMicPermissionError('Microphone access is blocked. Please allow microphone permissions in your browser.');
       }
     }
   };
 
-  // Speak AI Question with Natural Speech Synthesis
+  // Speak AI question via TTS hook, then auto-start VAD when speech ends
   const speakQuestion = (questionText: string) => {
     if (!questionText) return;
 
-    // First stop mic to prevent acoustic echo
+    // Stop mic first to prevent acoustic echo
     stopRecordingResources();
 
     if (!('speechSynthesis' in window)) {
-      // Fallback: If browser lacks speech synthesis, jump straight to recording
+      // No TTS support — jump straight to recording
       setIsSpeakingQuestion(false);
       isSpeakingRef.current = false;
-      startRecording();
+      if (autoModeRef.current) setTimeout(() => startRecording(), 300);
       return;
-    }
-
-    window.speechSynthesis.cancel();
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
     }
 
     isSpeakingRef.current = true;
     setIsSpeakingQuestion(true);
 
-    const utterance = new SpeechSynthesisUtterance(questionText);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-
-    // Pick a natural English voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('David')));
-    if (naturalVoice) utterance.voice = naturalVoice;
-
-    let hasEnded = false;
-    const handleEnd = () => {
-      if (hasEnded) return;
-      hasEnded = true;
+    // useQuestionTTS handles voice selection, Chromium onend workaround, and cleanup
+    ttsSpeakFn(questionText, () => {
       isSpeakingRef.current = false;
       setIsSpeakingQuestion(false);
 
-      // AUTOMATIC HANDS-FREE TRANSITION: Question finished -> open mic immediately!
+      // AUTOMATIC HANDS-FREE TRANSITION: question finished → open mic immediately
       if (autoModeRef.current) {
-        setTimeout(() => {
-          startRecording();
-        }, 300);
+        setTimeout(() => startRecording(), 300);
       }
-    };
-
-    utterance.onstart = () => {
-      isSpeakingRef.current = true;
-      setIsSpeakingQuestion(true);
-    };
-
-    utterance.onend = handleEnd;
-    utterance.onerror = (e) => {
-      console.warn("SpeechSynthesis error:", e);
-      handleEnd();
-    };
-
-    // Chrome safety timer: Chromium onend bug fallback
-    const safetyTimeout = Math.max(5000, questionText.length * 90);
-    setTimeout(() => {
-      if (isSpeakingRef.current) {
-        handleEnd();
-      }
-    }, safetyTimeout);
-
-    window.speechSynthesis.speak(utterance);
+    });
   };
 
   // Turn Lifecycle: When current question ID changes, speak the new question
@@ -376,6 +338,36 @@ export const MockInterviewRoom: React.FC = () => {
       speakQuestion(currentQ.questionText);
     }
   }, [currentQ?.id, currentQ?.questionText, hasSessionStarted]);
+
+  // W23: Called when student clicks "Next Question" after submitting an answer
+  const onClickNextQuestion = useCallback(() => {
+    setNextQuestionStatus('generating');
+
+    // 3s fallback: if Redis pre-gen hasn't arrived, request bank fallback
+    nextQuestionTimeoutRef.current = setTimeout(async () => {
+      if (nextQuestionStatus !== 'ready') {
+        const domain = student?.pepDomain;
+        const fallback = await fetchBankFallback(currentDifficulty, domain);
+        if (fallback) {
+          onNextQuestionReady(fallback);
+        } else {
+          setNextQuestionStatus('error');
+        }
+      }
+    }, 3000);
+  }, [nextQuestionStatus, currentDifficulty, student, fetchBankFallback]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Called when SSE NEXT_QUESTION_READY event arrives (or bank fallback resolves)
+  const onNextQuestionReady = useCallback((question: QuestionTurn) => {
+    if (nextQuestionTimeoutRef.current) {
+      clearTimeout(nextQuestionTimeoutRef.current);
+      nextQuestionTimeoutRef.current = null;
+    }
+    // Update difficulty tracking (W5)
+    setCurrentDifficulty(question.difficulty);
+    setNextQuestionStatus('ready');
+    // The turn lifecycle effect will auto-speak the question when its ID changes
+  }, []);
 
   // Initial user start handler
   const handleStartSession = () => {
@@ -398,7 +390,15 @@ export const MockInterviewRoom: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6 animate-in fade-in duration-200">
-      
+
+      {/* W23: Next-question loading state */}
+      {nextQuestionStatus === 'generating' && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5">
+          <span className="animate-spin text-neutral-500 text-base">⟳</span>
+          <span className="text-xs text-neutral-600">Preparing your next question…</span>
+        </div>
+      )}
+
       {/* Proctoring Warning Banner */}
       {showWarning && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between text-rose-900 shadow-xs animate-in slide-in-from-top duration-150">
@@ -440,7 +440,7 @@ export const MockInterviewRoom: React.FC = () => {
                 <Zap className="w-3 h-3 mr-1" /> HANDS-FREE MODE
               </span>
             </div>
-            <p className="text-[11px] text-neutral-500">Autonomous voice interaction: AI Speaks $\rightarrow$ Listens $\rightarrow$ Submits on pause</p>
+            <p className="text-[11px] text-neutral-500">Audio sent to AI backend: Whisper STT + waveform analysis + LLM technical evaluation</p>
           </div>
         </div>
 
@@ -571,7 +571,7 @@ export const MockInterviewRoom: React.FC = () => {
                   {isRecording ? 'Live Microphone Stream (Continuous)' : 'Speech Transcript'}
                 </span>
                 <span className="text-[10px] font-mono text-neutral-400">
-                  {isRecording ? 'Auto-submits on 2.5s pause' : 'Editable'}
+                  {isRecording ? 'Audio → Whisper STT + backend eval' : 'Editable (text fallback)'}
                 </span>
               </div>
 
@@ -591,15 +591,32 @@ export const MockInterviewRoom: React.FC = () => {
             {/* Action Controls & Manual Override */}
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
               <button
-                onClick={isRecording ? stopRecordingResources : startRecording}
+                onClick={() => isRecording ? stopRecordingResources() : startRecording()}
+                disabled={isRecording || isSubmitting}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-                  isRecording 
-                    ? 'bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100' 
-                    : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 shadow-2xs'
+                  isRecording
+                    ? 'bg-rose-50 border border-rose-200 text-rose-700 cursor-default'
+                    : isSubmitting
+                      ? 'bg-neutral-100 border border-neutral-200 text-neutral-400 cursor-not-allowed opacity-60'
+                      : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 shadow-2xs'
                 }`}
               >
-                {isRecording ? <MicOff className="w-3.5 h-3.5 text-rose-600" /> : <Mic className="w-3.5 h-3.5 text-neutral-600" />}
-                <span>{isRecording ? 'Pause Mic' : 'Open Mic'}</span>
+                {isRecording ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse flex-shrink-0" />
+                    <span>Listening…</span>
+                  </>
+                ) : isSubmitting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-400" />
+                    <span>Processing…</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-3.5 h-3.5 text-neutral-600" />
+                    <span>Start Answering</span>
+                  </>
+                )}
               </button>
 
               <button
