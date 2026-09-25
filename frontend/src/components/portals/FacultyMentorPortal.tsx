@@ -45,12 +45,16 @@ export const FacultyMentorPortal: React.FC = () => {
   const fetchMentees = async () => {
     try {
       setLoading(true);
-      const list = await api.admin.getMentorMentees();
+      // Use the real mentor endpoint — returns students assigned to the logged-in FACULTY_MENTOR
+      const list = await api.mentors.getMyStudents();
       if (list) {
         setMentees(list);
       }
     } catch (err: any) {
-      console.warn('Error loading mentees:', err);
+      console.warn('Error loading mentees from real API, falling back to mock:', err);
+      // Fallback to local mock data if the backend is unreachable
+      const fallback = await api.admin.getMentorMentees();
+      if (fallback) setMentees(fallback);
     } finally {
       setLoading(false);
     }

@@ -1,24 +1,38 @@
-import { 
-  StudentProfile, 
-  DiagnosticReport, 
-  TrainerTenure, 
-  InterviewAssignment, 
-  QuestionTurn, 
+import {
+  StudentProfile,
+  DiagnosticReport,
+  TrainerTenure,
+  InterviewAssignment,
+  QuestionTurn,
   ParsedResume,
   CodingHandles
 } from '../types';
-import { 
-  DEFAULT_CLEAN_STUDENT,
-  INITIAL_STUDENT_PROFILE, 
-  MOCK_INTERVIEW_QUESTIONS, 
-  MOCK_TRAINER_TENURES, 
-  MOCK_ASSIGNMENTS, 
+import {
+  INITIAL_STUDENT_PROFILE,
+  INITIAL_CRITERIA_TASKS,
+  MOCK_INTERVIEW_QUESTIONS,
+  MOCK_TRAINER_TENURES,
+  MOCK_ASSIGNMENTS,
   MOCK_MENTEES_LIST,
   PEP_DOMAINS,
   LISTENING_PASSAGE
 } from '../data/mockData';
 
-// Direct Client-Side Groq API Call helper
+// ── ApiError ──────────────────────────────────────────────────────────────────
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+// ── Direct Groq API Call helper (client-side, uses user-provided API key) ────
+
 async function callGroqDirect(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -44,6 +58,8 @@ async function callGroqDirect(apiKey: string, systemPrompt: string, userPrompt: 
   const data = await resp.json();
   return data.choices?.[0]?.message?.content || '';
 }
+
+// ── ApiClient ─────────────────────────────────────────────────────────────────
 
 class ApiClient {
   private token: string | null = null;
@@ -79,65 +95,87 @@ class ApiClient {
     }
   }
 
-  // AUTH
+  // ── Base fetch helper (auth header + json envelope + FormData support) ──────
+
+  private async apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const token = localStorage.getItem('auth_token');
+    const isFormData = options.body instanceof FormData;
+
+    const headers: Record<string, string> = {};
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    // Merge caller-supplied headers (after defaults so they can override)
+    if (options.headers) {
+      const extra = options.headers as Record<string, string>;
+      Object.assign(headers, extra);
+    }
+
+    const res = await fetch(path, { ...options, headers });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new ApiError(res.status, res.statusText);
+    }
+
+    if (!res.ok) {
+      throw new ApiError(res.status, json?.message ?? res.statusText, json?.code);
+    }
+
+    return json.data as T;
+  }
+
+  // ── AUTH ──────────────────────────────────────────────────────────────────
+
   auth = {
-    login: async (email: string, _password?: string) => {
-      const normalizedEmail = email.toLowerCase().trim();
-      let role: any = 'STUDENT';
-      let name = 'Student Candidate';
+    login: async (email: string, password: string) => {
+      const data = await this.apiFetch<{ token: string; user: { id: string; name: string; email: string; role: string }; studentId: string | null }>(
+        '/api/auth/login',
+        { method: 'POST', body: JSON.stringify({ email, password }) }
+      );
+      this.setToken(data.token);
+      return data;
+    },
 
-      if (normalizedEmail.includes('superadmin') || normalizedEmail.includes('admin@college.edu')) {
-        role = 'SUPER_ADMIN';
-        name = 'Dr. Rajesh Nair (Super Admin)';
-      } else if (normalizedEmail.includes('coord') || normalizedEmail.includes('placement')) {
-        role = 'PLACEMENT_COORDINATOR';
-        name = 'Prof. S. Ranganathan';
-      } else if (normalizedEmail.includes('prog') || normalizedEmail.includes('program')) {
-        role = 'PROGRAM_ADMIN';
-        name = 'Dr. K. Swaminathan';
-      } else if (normalizedEmail.includes('mentor') || normalizedEmail.includes('faculty')) {
-        role = 'FACULTY_MENTOR';
-        name = 'Dr. Ananya Sharma';
-      } else if (normalizedEmail.includes('trainer')) {
-        role = 'TRAINER';
-        name = 'Vikram Malhotra';
-      } else {
-        role = 'STUDENT';
-        name = 'Aravind Kumar';
+    register: async (userData: {
+      name: string;
+      email: string;
+      password: string;
+      rollNumber: string;
+      batchId: string;
+      subdivisionId?: string;
+    }) => {
+      const data = await this.apiFetch<{ token: string; user: { id: string; name: string; email: string; role: string }; studentId: string }>(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify(userData) }
+      );
+      this.setToken(data.token);
+      return data;
+    },
+
+    logout: async () => {
+      try {
+        await this.apiFetch('/api/auth/logout', { method: 'POST' });
+      } catch {
+        // Token may already be invalid — clear local state regardless
       }
-
-      const dummyUser = {
-        id: `usr_${Date.now()}`,
-        name,
-        email,
-        role
-      };
-
-      const token = `jwt_mock_${Date.now()}`;
-      this.setToken(token);
-      localStorage.setItem('auth_user', JSON.stringify(dummyUser));
-
-      return {
-        user: dummyUser,
-        token,
-        studentId: 'stu-21cs1084'
-      };
+      this.setToken(null);
     },
 
-    register: async (userData: any) => {
-      const user = {
-        id: `usr_${Date.now()}`,
-        name: userData.name || 'New User',
-        email: userData.email,
-        role: userData.role || 'STUDENT'
-      };
-      const token = `jwt_mock_${Date.now()}`;
-      this.setToken(token);
-      localStorage.setItem('auth_user', JSON.stringify(user));
-      return { user, token, studentId: `stu-${Date.now().toString().slice(-4)}` };
+    me: async () => {
+      return await this.apiFetch<{ user: { id: string; name: string; email: string; role: string }; studentId: string | null }>(
+        '/api/auth/me'
+      );
     },
 
+    // External self-registration — no M1 backend route for email verification
     registerExternal: async (userData: { name: string; email: string; password?: string; department?: string; batchYear?: number }) => {
+      // TODO: wire to real API when M2 routes are implemented
       return {
         message: 'Registration successful. Verification code generated.',
         email: userData.email,
@@ -145,7 +183,9 @@ class ApiClient {
       };
     },
 
+    // Email verification — no M1 backend route
     verifyEmail: async (email: string, _code: string) => {
+      // TODO: wire to real API when M2 routes are implemented
       const user = {
         id: `usr_${Date.now()}`,
         name: email.split('@')[0],
@@ -157,44 +197,124 @@ class ApiClient {
       localStorage.setItem('auth_user', JSON.stringify(user));
       return { user, token, studentId: 'stu-21cs1084' };
     },
-
-    me: async () => {
-      const saved = localStorage.getItem('auth_user');
-      if (saved) {
-        return { user: JSON.parse(saved), studentId: 'stu-21cs1084' };
-      }
-      return {
-        user: { id: 'usr_guest', name: 'Aravind Kumar', email: 'aravind.k@college.edu', role: 'STUDENT' },
-        studentId: 'stu-21cs1084'
-      };
-    }
   };
 
-  // STUDENT PROFILE
-  student = {
-    getProfile: async (_studentId: string): Promise<StudentProfile> => {
-      return this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
+  // ── ORG (public, no auth required — used for registration dropdowns) ────────
+
+  org = {
+    getInstitutions: async (): Promise<any[]> => {
+      const data = await this.apiFetch<{ items: any[] }>('/api/org/institutions');
+      return data.items;
     },
 
-    updateProfile: async (_studentId: string, updates: Partial<StudentProfile>): Promise<StudentProfile> => {
+    getPrograms: async (institutionId?: string): Promise<any[]> => {
+      const qs = institutionId ? `?institution_id=${encodeURIComponent(institutionId)}` : '';
+      const data = await this.apiFetch<{ items: any[] }>(`/api/org/programs${qs}`);
+      return data.items;
+    },
+
+    getBatches: async (programId?: string): Promise<any[]> => {
+      const qs = programId ? `?program_id=${encodeURIComponent(programId)}` : '';
+      const data = await this.apiFetch<{ items: any[] }>(`/api/org/batches${qs}`);
+      return data.items;
+    },
+
+    getSubdivisions: async (batchId?: string): Promise<any[]> => {
+      const qs = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : '';
+      const data = await this.apiFetch<{ items: any[] }>(`/api/org/subdivisions${qs}`);
+      return data.items;
+    },
+  };
+
+  // ── STUDENT PROFILE ───────────────────────────────────────────────────────
+
+  student = {
+    getProfile: async (studentId: string): Promise<StudentProfile> => {
+      try {
+        const data = await this.apiFetch<{ student: any }>(`/api/students/${studentId}`);
+        const s = data.student;
+        // Preserve locally-cached supplementary fields not yet in M1 backend
+        // (criteriaTasks, recentReports, department, track, mentor info)
+        const cached = this.getStorage<StudentProfile | null>('student_profile', null);
+        return {
+          id: s.id,
+          name: s.name,
+          rollNumber: s.roll_number,
+          email: s.email,
+          department: cached?.department ?? 'Computer Science & Engineering',
+          batchYear: cached?.batchYear ?? 2026,
+          track: cached?.track ?? 'HOPE_ELITE',
+          mentorName: cached?.mentorName ?? 'Unassigned',
+          mentorEmail: cached?.mentorEmail ?? '',
+          codingHandles: {
+            github: s.coding_handles?.github ?? cached?.codingHandles?.github ?? '',
+            leetcode: s.coding_handles?.leetcode ?? cached?.codingHandles?.leetcode ?? '',
+            codechef: s.coding_handles?.codechef ?? cached?.codingHandles?.codechef ?? '',
+            hackerrank: s.coding_handles?.hackerrank ?? cached?.codingHandles?.hackerrank ?? '',
+            codeforces: s.coding_handles?.codeforces ?? cached?.codingHandles?.codeforces ?? '',
+            leetcodeSolved: s.coding_handles?.leetcodeSolved ?? cached?.codingHandles?.leetcodeSolved ?? 0,
+            githubRepos: s.coding_handles?.githubRepos ?? cached?.codingHandles?.githubRepos ?? 0,
+          },
+          resume: cached?.resume ?? null,
+          criteriaTasks: cached?.criteriaTasks ?? INITIAL_CRITERIA_TASKS.map(t => ({ ...t, isCompleted: false, verifiedByMentor: false })),
+          recentReports: cached?.recentReports ?? [],
+        };
+      } catch {
+        // Fallback to localStorage cache when API is unreachable
+        return this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
+      }
+    },
+
+    updateProfile: async (studentId: string, updates: Partial<StudentProfile>): Promise<StudentProfile> => {
+      try {
+        const body: Record<string, any> = {};
+        if (updates.codingHandles) {
+          body.codingHandles = updates.codingHandles;
+        }
+        await this.apiFetch<{ student: any }>(`/api/students/${studentId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        });
+      } catch {
+        // On API failure, still update local cache
+      }
       const current = this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
       const updated = { ...current, ...updates };
       this.setStorage('student_profile', updated);
       return updated;
     },
 
-    updateCodingHandles: async (_studentId: string, handles: CodingHandles): Promise<void> => {
+    updateCodingHandles: async (studentId: string, handles: CodingHandles): Promise<void> => {
+      try {
+        await this.apiFetch<{ student: any }>(`/api/students/${studentId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ codingHandles: handles }),
+        });
+      } catch {
+        // Local fallback
+      }
       const current = this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
       current.codingHandles = { ...current.codingHandles, ...handles };
       this.setStorage('student_profile', current);
     },
 
     uploadResume: async (
-      _studentId: string, 
+      studentId: string,
       payload: FormData | { resumeText: string; fileName?: string } | ParsedResume
     ): Promise<ParsedResume> => {
-      let parsed: ParsedResume;
+      // If binary PDF FormData, upload to backend; otherwise fall through to client-side parse
+      if (payload instanceof FormData) {
+        try {
+          await this.apiFetch<{ resumeUrl: string }>(`/api/students/${studentId}/resume`, {
+            method: 'PATCH',
+            body: payload,
+          });
+        } catch (err) {
+          console.warn('[api.student.uploadResume] Backend upload failed:', err);
+        }
+      }
 
+      let parsed: ParsedResume;
       if ('skills' in payload && 'projects' in payload) {
         parsed = payload as ParsedResume;
       } else {
@@ -225,9 +345,11 @@ class ApiClient {
     }
   };
 
-  // TASKS
+  // ── TASKS (no M1 backend — checklist is a M2 feature) ────────────────────
+
   tasks = {
     toggleTask: async (_studentId: string, taskId: string): Promise<boolean> => {
+      // TODO: wire to real API when M2 routes are implemented
       const current = this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
       let isCompleted = false;
       current.criteriaTasks = current.criteriaTasks.map(t => {
@@ -242,6 +364,7 @@ class ApiClient {
     },
 
     verifyTask: async (_studentId: string, taskId: string): Promise<void> => {
+      // TODO: wire to real API when M2 routes are implemented
       const current = this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
       current.criteriaTasks = current.criteriaTasks.map(t => {
         if (t.id === taskId) {
@@ -253,7 +376,8 @@ class ApiClient {
     }
   };
 
-  // INTERVIEW ROOM (Direct Groq + Client-Side Evaluator)
+  // ── INTERVIEW ROOM (Direct Groq + AI-service pipeline) ───────────────────
+
   interview = {
     start: async (_studentId: string, type: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION' | 'PRACTICE' = 'MOCK_INTERVIEW'): Promise<{ sessionId: string; firstQuestion: QuestionTurn }> => {
       const sessionId = `ses_${Date.now()}`;
@@ -295,6 +419,7 @@ class ApiClient {
     },
 
     recordProctorEvent: async (sessionId: string, _eventType: 'TAB_SWITCH' | 'FULLSCREEN_EXIT') => {
+      // TODO: wire to real API when M2 proctor-event route is implemented
       const sess = this.getStorage<any>(`interview_${sessionId}`, { tabSwitches: 0 });
       sess.tabSwitches = (sess.tabSwitches || 0) + 1;
       const isFlagged = sess.tabSwitches >= 4;
@@ -312,12 +437,11 @@ class ApiClient {
       const turnIdx = sess.turnIndex || 0;
       const groqKey = localStorage.getItem('groq_api_key');
 
-      // 1. Calculate speech metrics client-side
+      // Calculate speech metrics client-side
       const words = studentAnswer.trim().split(/\s+/).filter(Boolean);
       const wordCount = words.length;
       const calcWpm = Math.max(90, Math.min(160, Math.round((wordCount / Math.max(durationSeconds, 8)) * 60)));
 
-      // Detect common fillers
       const lower = studentAnswer.toLowerCase();
       const fillers: Record<string, number> = {};
       ['uh', 'um', 'like', 'basically', 'actually'].forEach(f => {
@@ -327,14 +451,12 @@ class ApiClient {
       });
       const totalFillers = Object.values(fillers).reduce((a, b) => a + b, 0);
 
-      // Default scores
       let technicalScore = 84;
       let communicationScore = 80;
       let feedback = "Clear technical articulation with good awareness of system tradeoffs.";
       let strengths = "Good structural explanation and confident terminology.";
       let weaknesses = "Can elaborate more on edge-case failure mitigation.";
 
-      // 2. Direct Groq evaluation if API key is present
       if (groqKey && studentAnswer.length > 10) {
         try {
           const sys = `You are a technical interview evaluator. Evaluate this candidate response. Return ONLY a JSON object:
@@ -372,7 +494,6 @@ class ApiClient {
 
       sess.questions[turnIdx] = turnEvaluation;
 
-      // Check if session completed (3 turns max)
       const isCompleted = turnIdx >= 2;
 
       let nextQuestion: QuestionTurn | undefined = undefined;
@@ -380,7 +501,7 @@ class ApiClient {
 
       if (!isCompleted) {
         const nextDifficulty = turnIdx === 0 ? 'MEDIUM' : 'ADVANCED';
-        const nextQText = turnIdx === 0 
+        const nextQText = turnIdx === 0
           ? "How did you manage database connection pooling and PostgreSQL index strategy to support horizontal scaling under heavy query load?"
           : "In the event of a network partition where multiple microservice nodes attempt conflicting updates, how would you maintain data consistency without sacrificing latency?";
 
@@ -431,6 +552,7 @@ class ApiClient {
     },
 
     finalize: async (sessionId: string): Promise<DiagnosticReport | null> => {
+      // TODO: wire to real API when M2 session conclude route is implemented
       const sess = this.getStorage<any>(`interview_${sessionId}`, null);
       if (!sess) return null;
 
@@ -455,7 +577,95 @@ class ApiClient {
       return report;
     },
 
+    /**
+     * Send a WAV audio blob to the FastAPI ai-service for full pipeline evaluation.
+     * Goes directly to FastAPI (/ai/evaluate-response, proxied by Vite).
+     * The Node.js session turn endpoint (POST /api/sessions/:id/turns) should be
+     * used instead once M2 session creation is implemented — see api.sessions.submitTurn.
+     */
+    evaluateAudio: async (
+      audioBlob: Blob,
+      metadata: {
+        question_text: string;
+        difficulty: string;
+        turn_number: number;
+        domain?: string | null;
+        previous_turns?: Array<{
+          question_text: string;
+          student_answer: string;
+          difficulty: string;
+          technical_score?: number | null;
+          feedback?: string | null;
+        }>;
+      }
+    ): Promise<{
+      transcript: string;
+      stt_raw: string;
+      technical_score: number;
+      feedback: string;
+      strengths: string;
+      weaknesses: string;
+      next_recommended_difficulty: string;
+      pace_wpm: number;
+      filler_count: number;
+      fluency_score: number;
+      clarity_score: number;
+    } | null> => {
+      try {
+        const form = new FormData();
+        form.append('audio', audioBlob, 'response.wav');
+        form.append('metadata', JSON.stringify(metadata));
+
+        const resp = await fetch('/ai/evaluate-response', {
+          method: 'POST',
+          body: form,
+        });
+
+        if (!resp.ok) {
+          console.error(`[AI Service] /ai/evaluate-response → ${resp.status} ${resp.statusText}`);
+          return null;
+        }
+
+        return await resp.json();
+      } catch (e) {
+        console.error('[AI Service] evaluateAudio network error:', e);
+        return null;
+      }
+    },
+
+    /**
+     * Generate the next interview question via the FastAPI ai-service.
+     * Returns null on network error or service unavailability.
+     */
+    generateQuestion: async (body: {
+      student_name: string;
+      skills: string[];
+      projects: Array<{ title: string; tech_stack: string[]; description: string }>;
+      previous_turns: Array<{
+        question_text: string;
+        student_answer: string;
+        difficulty: string;
+        technical_score: number | null;
+        feedback: string | null;
+      }>;
+      difficulty: string;
+      domain?: string | null;
+    }): Promise<{ question_text: string; difficulty: string; category?: string } | null> => {
+      try {
+        const resp = await fetch('/ai/generate-question', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch {
+        return null;
+      }
+    },
+
     getReport: async (_sessionId: string): Promise<DiagnosticReport> => {
+      // TODO: wire to real API when M2 session routes are implemented
       const student = this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
       return student.recentReports[0] || {
         id: 'rep-init',
@@ -477,9 +687,11 @@ class ApiClient {
     }
   };
 
-  // LISTENING COMPREHENSION
+  // ── LISTENING COMPREHENSION (no M1 backend) ──────────────────────────────
+
   listening = {
     start: async (_studentId: string) => {
+      // TODO: wire to real API when M2 routes are implemented
       return {
         sessionId: `lis_${Date.now()}`,
         passage: LISTENING_PASSAGE,
@@ -489,6 +701,7 @@ class ApiClient {
     },
 
     recordReplay: async (sessionId: string) => {
+      // TODO: wire to real API when M2 routes are implemented
       const sess = this.getStorage<any>(`listening_${sessionId}`, { replaysUsed: 0 });
       sess.replaysUsed = (sess.replaysUsed || 0) + 1;
       this.setStorage(`listening_${sessionId}`, sess);
@@ -496,6 +709,7 @@ class ApiClient {
     },
 
     submitAnswers: async (_sessionId: string, answers: any[]) => {
+      // TODO: wire to real API when M2 routes are implemented
       return {
         overallScore: 88,
         evaluations: answers.map((ans, idx) => ({
@@ -508,7 +722,8 @@ class ApiClient {
     }
   };
 
-  // SUGGESTION SYSTEM CHATBOT
+  // ── SUGGESTION SYSTEM CHATBOT (client-side Groq) ─────────────────────────
+
   suggestions = {
     getOrCreateSession: async (_studentId = 'stu-101'): Promise<string> => {
       return `sug_${Date.now()}`;
@@ -573,13 +788,140 @@ class ApiClient {
     }
   };
 
-  // ADMIN PORTALS
+  // ── ADMIN (PROGRAM_ADMIN scope) ───────────────────────────────────────────
+
   admin = {
+    // ── Real backend endpoints ─────────────────────────────────────────────
+
+    /**
+     * GET /api/admin/users — list users with optional role/status/search filters.
+     * Requires PROGRAM_ADMIN role.
+     */
+    getUsers: async (filters?: { role?: string; status?: string; search?: string }): Promise<any[]> => {
+      const params = new URLSearchParams();
+      if (filters?.role) params.append('role', filters.role);
+      if (filters?.status) params.append('status', filters.status);
+      if (filters?.search) params.append('search', filters.search);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const data = await this.apiFetch<{ users: any[] }>(`/api/admin/users${qs}`);
+      return data.users;
+    },
+
+    /**
+     * PATCH /api/admin/users/:id/role — change a user's role.
+     * Requires PROGRAM_ADMIN. Cannot grant PROGRAM_ADMIN role.
+     */
+    updateUserRole: async (userId: string, role: string): Promise<any> => {
+      const data = await this.apiFetch<{ user: any }>(`/api/admin/users/${userId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role }),
+      });
+      return data.user;
+    },
+
+    /**
+     * PATCH /api/admin/users/:id/status — change a user's status (ACTIVE/INACTIVE/SUSPENDED).
+     * Requires PROGRAM_ADMIN.
+     */
+    updateUserStatus: async (userId: string, status: string): Promise<any> => {
+      const data = await this.apiFetch<{ user: any }>(`/api/admin/users/${userId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      return data.user;
+    },
+
+    getFacultyMentors: async (): Promise<any[]> => {
+      try {
+        const users = await this.admin.getUsers({ role: 'FACULTY_MENTOR' });
+        return users.map(u => ({
+          id: u.id,
+          userId: u.id,
+          name: u.name,
+          email: u.email,
+          status: u.status,
+          createdAt: u.created_at,
+          menteeCount: 0,              // TODO: wire to real API when M2 routes are implemented
+          assignedMenteesCount: 0,
+        }));
+      } catch {
+        return this.getStorage<any[]>('admin_faculty_mentors', [
+          { id: 'fm-1', name: 'Dr. Ananya Sharma', email: 'ananya.sharma@college.edu', department: 'CSE', assignedMenteesCount: 24 },
+          { id: 'fm-2', name: 'Prof. R. Venkatesh', email: 'venkatesh.r@college.edu', department: 'IT', assignedMenteesCount: 22 }
+        ]);
+      }
+    },
+
+    getStudents: async (params: { cohort?: string; search?: string } = {}) => {
+      try {
+        const filters: { role: string; search?: string } = { role: 'STUDENT' };
+        if (params.search) filters.search = params.search;
+        const users = await this.admin.getUsers(filters);
+        return users.map(u => ({
+          id: u.id,
+          userId: u.id,
+          name: u.name,
+          email: u.email,
+          rollNumber: '',     // Not in users endpoint — TODO: enrich via student endpoint when M2 available
+          department: '',
+          track: 'STUDENT',
+          mentorName: 'Unassigned',
+          score: null,
+          status: u.status,
+          createdAt: u.created_at,
+        }));
+      } catch {
+        let list = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
+        if (params.search) {
+          const s = params.search.toLowerCase();
+          list = list.filter(item => item.name.toLowerCase().includes(s) || (item.rollNumber || '').toLowerCase().includes(s));
+        }
+        return list;
+      }
+    },
+
+    getMentorMentees: async (_mentorId?: string) => {
+      // TODO: wire to real API when M2 routes are implemented (use api.mentors.getMyStudents())
+      return this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
+    },
+
+    assignMentor: async (studentId: string, mentorId: string) => {
+      try {
+        await this.apiFetch('/api/mentors/assign', {
+          method: 'POST',
+          body: JSON.stringify({ studentId, mentorId }),
+        });
+        return { message: 'Mentor assigned successfully' };
+      } catch (err) {
+        // Fallback: update local mock data
+        const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
+        const updated = students.map(s => s.id === studentId ? { ...s, mentorId } : s);
+        this.setStorage('admin_students', updated);
+        return { message: 'Mentor assigned successfully' };
+      }
+    },
+
+    deleteUser: async (userId: string) => {
+      // No DELETE endpoint in M1 — suspend the user via the status endpoint instead
+      try {
+        await this.admin.updateUserStatus(userId, 'SUSPENDED');
+        return { success: true, message: 'User suspended successfully' };
+      } catch {
+        // Local fallback
+        const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST).filter((s: any) => s.id !== userId);
+        this.setStorage('admin_students', students);
+        return { success: true, message: 'User removed successfully' };
+      }
+    },
+
+    // ── Mock-only endpoints (no M1 backend routes) ─────────────────────────
+
     getCoordinatorStats: async () => {
+      // TODO: wire to real API when M2 routes are implemented
       const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
       const totalCandidates = students.length;
-      const hopeEliteCount = students.filter(s => s.track === 'HOPE' && s.isElite).length;
-      const pepTotalCount = students.filter(s => s.track === 'PEP').length;
+      const hopeEliteCount = students.filter((s: any) => s.track === 'HOPE' && s.isElite).length;
+      const pepTotalCount = students.filter((s: any) => s.track === 'PEP').length;
 
       return {
         totalCandidates: totalCandidates || 240,
@@ -593,6 +935,7 @@ class ApiClient {
     },
 
     getSystemStats: async () => {
+      // TODO: wire to real API when M2 routes are implemented
       return {
         programAdminsCount: 8,
         facultyMentorsCount: 24,
@@ -602,13 +945,25 @@ class ApiClient {
     },
 
     getProgramAdmins: async (): Promise<any[]> => {
-      return this.getStorage<any[]>('admin_program_admins', [
-        { id: 'pa-1', name: 'Dr. K. Swaminathan', email: 'swaminathan@college.edu', track: 'HOPE_ELITE', department: 'CSE', createdAt: '2026-01-10' },
-        { id: 'pa-2', name: 'Prof. Meera Deshmukh', email: 'meera.d@college.edu', track: 'PEP', department: 'ECE', createdAt: '2026-02-15' }
-      ]);
+      try {
+        const users = await this.admin.getUsers({ role: 'PROGRAM_ADMIN' });
+        return users.map(u => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          status: u.status,
+          createdAt: u.created_at,
+        }));
+      } catch {
+        return this.getStorage<any[]>('admin_program_admins', [
+          { id: 'pa-1', name: 'Dr. K. Swaminathan', email: 'swaminathan@college.edu', track: 'HOPE_ELITE', department: 'CSE', createdAt: '2026-01-10' },
+          { id: 'pa-2', name: 'Prof. Meera Deshmukh', email: 'meera.d@college.edu', track: 'PEP', department: 'ECE', createdAt: '2026-02-15' }
+        ]);
+      }
     },
 
     createProgramAdmin: async (data: { name: string; email: string; password?: string }) => {
+      // TODO: wire to real API when M2 user-creation routes are implemented
       const admins = this.getStorage<any[]>('admin_program_admins', []);
       const newAdmin = { id: `pa_${Date.now()}`, ...data, createdAt: new Date().toISOString().split('T')[0] };
       admins.push(newAdmin);
@@ -616,14 +971,8 @@ class ApiClient {
       return newAdmin;
     },
 
-    getFacultyMentors: async (): Promise<any[]> => {
-      return this.getStorage<any[]>('admin_faculty_mentors', [
-        { id: 'fm-1', name: 'Dr. Ananya Sharma', email: 'ananya.sharma@college.edu', department: 'CSE', assignedMenteesCount: 24 },
-        { id: 'fm-2', name: 'Prof. R. Venkatesh', email: 'venkatesh.r@college.edu', department: 'IT', assignedMenteesCount: 22 }
-      ]);
-    },
-
     createFacultyMentor: async (data: { name: string; email: string; password?: string }) => {
+      // TODO: wire to real API when M2 user-creation routes are implemented
       const mentors = this.getStorage<any[]>('admin_faculty_mentors', []);
       const newMentor = { id: `fm_${Date.now()}`, ...data, assignedMenteesCount: 0 };
       mentors.push(newMentor);
@@ -631,14 +980,8 @@ class ApiClient {
       return newMentor;
     },
 
-    assignMentor: async (studentId: string, mentorId: string) => {
-      const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
-      const updated = students.map(s => s.id === studentId ? { ...s, mentorId } : s);
-      this.setStorage('admin_students', updated);
-      return { message: 'Mentor assigned successfully' };
-    },
-
     createStudent: async (data: any) => {
+      // TODO: wire to real API when M2 user-creation routes are implemented
       const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
       const newStudent = { id: `stu_${Date.now()}`, ...data };
       students.push(newStudent);
@@ -647,16 +990,12 @@ class ApiClient {
     },
 
     createStudentByMentor: async (data: any) => {
+      // TODO: wire to real API when M2 user-creation routes are implemented
       return this.admin.createStudent(data);
     },
 
-    deleteUser: async (userId: string) => {
-      const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST).filter(s => s.id !== userId);
-      this.setStorage('admin_students', students);
-      return { success: true, message: 'User removed successfully' };
-    },
-
     getStudentFullHistory: async (_studentId: string) => {
+      // TODO: wire to real API when M2 routes are implemented
       const student = this.getStorage<StudentProfile>('student_profile', INITIAL_STUDENT_PROFILE);
       const sessions = (student.recentReports || []).map((r, i) => ({
         id: r.id || `ses_${i + 1}`,
@@ -694,24 +1033,13 @@ class ApiClient {
       };
     },
 
-    getStudents: async (params: { cohort?: string; search?: string } = {}) => {
-      let list = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
-      if (params.search) {
-        const s = params.search.toLowerCase();
-        list = list.filter(item => item.name.toLowerCase().includes(s) || item.rollNumber.toLowerCase().includes(s));
-      }
-      return list;
-    },
-
-    getMentorMentees: async (_mentorId?: string) => {
-      return this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
-    },
-
     getTrainerTenures: async (): Promise<TrainerTenure[]> => {
+      // TODO: wire to real API when M2 trainer routes are implemented
       return this.getStorage<TrainerTenure[]>('trainer_tenures', MOCK_TRAINER_TENURES);
     },
 
     onboardTrainer: async (trainer: Omit<TrainerTenure, 'id' | 'isActive'>): Promise<TrainerTenure> => {
+      // TODO: wire to real API when M2 trainer routes are implemented
       const tenures = this.getStorage<TrainerTenure[]>('trainer_tenures', MOCK_TRAINER_TENURES);
       const newT: TrainerTenure = { id: `ten_${Date.now()}`, ...trainer, isActive: true };
       tenures.push(newT);
@@ -720,16 +1048,19 @@ class ApiClient {
     },
 
     revokeTrainer: async (id: string): Promise<void> => {
+      // TODO: wire to real API when M2 trainer routes are implemented
       const tenures = this.getStorage<TrainerTenure[]>('trainer_tenures', MOCK_TRAINER_TENURES);
       const updated = tenures.map(t => t.id === id ? { ...t, isActive: false } : t);
       this.setStorage('trainer_tenures', updated);
     },
 
     getAssignments: async (): Promise<InterviewAssignment[]> => {
+      // TODO: wire to real API when M2 assignment routes are implemented
       return this.getStorage<InterviewAssignment[]>('assignments', MOCK_ASSIGNMENTS);
     },
 
     createAssignment: async (asg: Omit<InterviewAssignment, 'id'>): Promise<InterviewAssignment> => {
+      // TODO: wire to real API when M2 assignment routes are implemented
       const list = this.getStorage<InterviewAssignment[]>('assignments', MOCK_ASSIGNMENTS);
       const newAsg = { id: `asg_${Date.now()}`, ...asg };
       list.push(newAsg);
@@ -738,8 +1069,104 @@ class ApiClient {
     },
 
     getPepDomains: async (): Promise<string[]> => {
+      // TODO: wire to real API when org/domains endpoint is implemented
       return PEP_DOMAINS;
     }
+  };
+
+  // ── MENTORS ───────────────────────────────────────────────────────────────
+
+  mentors = {
+    /**
+     * GET /api/mentors/my-students — returns all students assigned to the
+     * currently-authenticated FACULTY_MENTOR.
+     */
+    getMyStudents: async (): Promise<any[]> => {
+      const data = await this.apiFetch<{ students: any[] }>('/api/mentors/my-students');
+      // Normalise backend snake_case → frontend camelCase expected by components
+      return data.students.map(s => ({
+        id: s.id,
+        userId: s.user_id ?? s.id,
+        name: s.name,
+        email: s.email,
+        rollNumber: s.roll_number,
+        department: s.batch_name ?? '',
+        track: s.track ?? 'HOPE_ELITE',
+        subdivisionName: s.subdivision_name ?? '',
+        resumeUrl: s.resume_url,
+        resumeVerified: s.resume_verified,
+        score: null,   // TODO: wire to real API when M2 session aggregates are implemented
+        mentorName: '',
+      }));
+    },
+
+    /**
+     * POST /api/mentors/assign — assign a student to a mentor.
+     * Requires PROGRAM_ADMIN role.
+     */
+    assignMentor: async (studentId: string, mentorId: string): Promise<any> => {
+      const data = await this.apiFetch<{ assignment: any }>('/api/mentors/assign', {
+        method: 'POST',
+        body: JSON.stringify({ studentId, mentorId }),
+      });
+      return data.assignment;
+    },
+  };
+
+  // ── SESSIONS ──────────────────────────────────────────────────────────────
+
+  sessions = {
+    /**
+     * GET /api/sessions/bank-fallback — returns a question from the DB bank
+     * (pure DB read, no LLM). Falls back to static question if bank table
+     * is not yet populated (pre-M2).
+     */
+    bankFallback: async (
+      difficulty: 'EASY' | 'MEDIUM' | 'ADVANCED',
+      domain?: string
+    ): Promise<{ id: string; question_text: string; difficulty: string; category: string; domain: string | null }> => {
+      const params = new URLSearchParams({ difficulty });
+      if (domain) params.append('domain', domain);
+      return await this.apiFetch(`/api/sessions/bank-fallback?${params.toString()}`);
+    },
+
+    /**
+     * POST /api/sessions/:id/turns — submit an audio turn through the Node.js
+     * backend (STT → LLM eval → score normalisation → Redis/DB persistence).
+     *
+     * The caller must build FormData with:
+     *   - 'audio': WAV/audio blob
+     *   - 'metadata': JSON string matching TurnMetadataSchema
+     *
+     * NOTE: requires a real session UUID in the DB. Use this once M2 session
+     * creation (POST /api/sessions) is implemented. For now, evaluateAudio()
+     * goes directly to FastAPI for offline-friendly development.
+     */
+    submitTurn: async (
+      sessionId: string,
+      formData: FormData
+    ): Promise<{
+      transcript: string;
+      technicalScore: number;
+      communicationScore: number;
+      overallScore: number;
+      feedback: string;
+      strengths: string;
+      weaknesses: string;
+      nextDifficulty: string;
+      audioMetrics: {
+        paceWpm: number;
+        fillerCount: number;
+        fluencyScore: number;
+        clarityScore: number;
+      };
+    }> => {
+      return await this.apiFetch(`/api/sessions/${sessionId}/turns`, {
+        method: 'POST',
+        body: formData,
+        // No Content-Type header — fetch sets multipart boundary automatically for FormData
+      });
+    },
   };
 }
 

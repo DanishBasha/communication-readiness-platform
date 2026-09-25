@@ -12,6 +12,8 @@ const schema = z.object({
   DATABASE_URL: z.string().default('postgresql://postgres:postgres@localhost:5432/comm_readiness'),
   UPLOAD_MAX_FILE_SIZE_MB: z.coerce.number().default(5),
   UPLOAD_DIR: z.string().default('uploads'),
+  // Redis for session context cache (TTL: 2 hours per session)
+  REDIS_URL: z.string().default('redis://localhost:6379'),
 });
 
 export const env = schema.parse(process.env);
