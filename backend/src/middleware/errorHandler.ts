@@ -1,19 +1,15 @@
-import { Request, Response, NextFunction } from 'express';
-import { config } from '../config/env';
+import { ErrorRequestHandler } from 'express';
+import { AppError } from '../shared/errors/AppError';
 
-export const errorHandler = (
-  err: any,
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  console.error(`[ERROR ${req.method} ${req.path}]:`, err);
-
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
-
-  res.status(status).json({
-    error: message,
-    ...(config.nodeEnv === 'development' ? { stack: err.stack } : {})
-  });
+export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  if (err instanceof AppError) {
+    res.status(err.statusCode).json({
+      status: 'error',
+      message: err.message,
+      code: err.code,
+    });
+    return;
+  }
+  console.error(err);
+  res.status(500).json({ status: 'error', message: 'Internal server error', code: 'INTERNAL_ERROR' });
 };

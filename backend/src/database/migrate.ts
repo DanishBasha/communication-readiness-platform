@@ -1,69 +1,65 @@
-import fs from 'fs';
-import path from 'path';
+import 'dotenv/config';
 import { Client } from 'pg';
-import { config } from '../config/env';
+import fs from 'fs/promises';
+import path from 'path';
 
-export async function runMigration() {
-  console.log('--- Starting PostgreSQL Database Migration ---');
-  
-  // 1. Connect to default postgres DB to ensure target database exists
-  const setupClient = new Client({
-    host: config.database.host,
-    port: config.database.port,
-    user: config.database.user,
-    password: config.database.password,
-    database: 'postgres'
-  });
+const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+
+async function main(): Promise<void> {
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  console.log('[migrate] connected to database');
 
   try {
-    await setupClient.connect();
-    const dbCheck = await setupClient.query(
-      "SELECT 1 FROM pg_database WHERE datname = $1",
-      [config.database.database]
+    // Bootstrap: system schema must exist before migration 002 runs
+    await client.query(`CREATE SCHEMA IF NOT EXISTS system`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS system.migrations (
+        id          SERIAL PRIMARY KEY,
+        filename    VARCHAR(255) UNIQUE NOT NULL,
+        applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
+    const { rows: applied } = await client.query<{ filename: string }>(
+      'SELECT filename FROM system.migrations ORDER BY id'
     );
+    const appliedSet = new Set(applied.map(r => r.filename));
 
-    if (dbCheck.rowCount === 0) {
-      console.log(`Database '${config.database.database}' does not exist. Creating...`);
-      await setupClient.query(`CREATE DATABASE "${config.database.database}"`);
-      console.log(`Database '${config.database.database}' created successfully.`);
-    } else {
-      console.log(`Database '${config.database.database}' already exists.`);
+    const files = (await fs.readdir(MIGRATIONS_DIR))
+      .filter(f => f.endsWith('.sql'))
+      .sort();
+
+    let count = 0;
+    for (const file of files) {
+      if (appliedSet.has(file)) {
+        console.log(`[migrate] skip  ${file}`);
+        continue;
+      }
+      const sql = await fs.readFile(path.join(MIGRATIONS_DIR, file), 'utf8');
+      console.log(`[migrate] apply ${file}`);
+      await client.query('BEGIN');
+      try {
+        await client.query(sql);
+        await client.query(
+          'INSERT INTO system.migrations (filename) VALUES ($1)',
+          [file]
+        );
+        await client.query('COMMIT');
+        count++;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw new Error(`Migration ${file} failed: ${(err as Error).message}`);
+      }
     }
-  } catch (error) {
-    console.error('Error during initial database verification:', error);
-  } finally {
-    await setupClient.end();
-  }
 
-  // 2. Connect to the target database and execute schema.sql
-  const targetClient = new Client({
-    connectionString: config.database.url
-  });
-
-  try {
-    await targetClient.connect();
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    const sql = fs.readFileSync(schemaPath, 'utf8');
-    
-    console.log('Executing schema.sql DDL...');
-    await targetClient.query(sql);
-    console.log('All schemas, tables, constraints, and indexes created successfully!');
-  } catch (error) {
-    console.error('Migration failed:', error);
-    throw error;
+    console.log(`[migrate] done — ${count} migration(s) applied`);
   } finally {
-    await targetClient.end();
+    await client.end();
   }
 }
 
-if (require.main === module) {
-  runMigration()
-    .then(() => {
-      console.log('Migration completed.');
-      process.exit(0);
-    })
-    .catch((err) => {
-      console.error('Migration error:', err);
-      process.exit(1);
-    });
-}
+main().catch(err => {
+  console.error('[migrate] error:', err.message);
+  process.exit(1);
+});

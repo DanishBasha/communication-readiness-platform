@@ -21,8 +21,6 @@ import {
 } from '../data/mockData';
 import { api } from '../services/api';
 
-const BACKEND_API_BASE = 'http://localhost:5000/api';
-
 interface InterviewSessionState {
   isActive: boolean;
   sessionId?: string;
@@ -156,15 +154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         if (interviewState.sessionId) {
-          try {
-            await fetch(`${BACKEND_API_BASE}/interview/proctor-event`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sessionId: interviewState.sessionId })
-            });
-          } catch {
-            // Offline fallback
-          }
+          api.interview.recordProctorEvent(interviewState.sessionId, 'TAB_SWITCH').catch(() => {});
         }
       }
     };
@@ -177,118 +167,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveView(type === 'MOCK_INTERVIEW' ? 'INTERVIEW_ROOM' : 'LISTENING_ROOM');
 
     try {
-      const res = await fetch(`${BACKEND_API_BASE}/interview/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, candidateId: student.id })
+      const data = await api.interview.start(student.id || 'stu-21cs1084', type);
+      setInterviewState({
+        isActive: true,
+        sessionId: data.sessionId,
+        type,
+        turnIndex: 0,
+        currentDifficulty: data.firstQuestion.difficulty,
+        questions: [data.firstQuestion],
+        tabSwitches: 0,
+        isFlagged: false,
+        orbState: 'SPEAKING',
+        liveTranscript: ''
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        const serverSession = data.session;
-        setInterviewState({
-          isActive: true,
-          sessionId: serverSession.id,
-          type,
-          turnIndex: 0,
-          currentDifficulty: (serverSession.currentDifficulty as Difficulty) || 'EASY',
-          questions: serverSession.questions.map((q: any) => ({
-            id: q.id,
-            questionNumber: q.questionNumber,
-            questionText: q.questionText,
-            difficulty: q.difficulty as Difficulty
-          })),
-          tabSwitches: 0,
-          isFlagged: false,
-          orbState: 'SPEAKING',
-          liveTranscript: ''
-        });
-        return;
-      }
     } catch {
-      console.warn('[AppContext] Node backend unreachable; using local session state.');
+      setInterviewState({
+        isActive: true,
+        sessionId: `ses_${Date.now()}`,
+        type,
+        turnIndex: 0,
+        currentDifficulty: 'EASY',
+        questions: MOCK_INTERVIEW_QUESTIONS,
+        tabSwitches: 0,
+        isFlagged: false,
+        orbState: 'SPEAKING',
+        liveTranscript: ''
+      });
     }
-
-    // Fallback if backend is not reachable
-    setInterviewState({
-      isActive: true,
-      sessionId: sessId,
-      type,
-      turnIndex: 0,
-      currentDifficulty: 'EASY',
-      questions: initialQuestions,
-      tabSwitches: 0,
-      isFlagged: false,
-      orbState: 'SPEAKING',
-      liveTranscript: ''
-    });
   };
 
   const submitAnswer = async (answerText: string) => {
     setInterviewState(prev => ({ ...prev, orbState: 'THINKING' }));
 
-    if (interviewState.sessionId) {
-      try {
-        const res = await fetch(`${BACKEND_API_BASE}/interview/submit-turn`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: interviewState.sessionId,
-            answerText
-          })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-
-          if (data.concluded && data.report) {
-            setLatestReport(data.report);
-            setStudent(prev => ({
-              ...prev,
-              recentReports: [data.report, ...prev.recentReports]
-            }));
-            setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
-            setActiveView('REPORT_VIEW');
-            return;
-          }
-
-          if (data.nextQuestion) {
-            setInterviewState(prev => {
-              const updatedQuestions = [...prev.questions];
-              updatedQuestions[prev.turnIndex] = {
-                ...updatedQuestions[prev.turnIndex],
-                studentAnswer: answerText,
-                technicalScore: data.evaluation.technical_score,
-                communicationScore: data.evaluation.communication_score,
-                wpm: data.evaluation.words_per_minute,
-                fillerWords: data.evaluation.total_fillers,
-                feedback: data.evaluation.feedback,
-                strengths: data.evaluation.strengths,
-                weaknesses: data.evaluation.weaknesses
-              };
-
-              const nextQ: QuestionTurn = {
-                id: data.nextQuestion.id,
-                questionNumber: data.nextQuestion.questionNumber,
-                questionText: data.nextQuestion.questionText,
-                difficulty: data.nextQuestion.difficulty as Difficulty
-              };
-
-              return {
-                ...prev,
-                turnIndex: prev.turnIndex + 1,
-                currentDifficulty: data.nextQuestion.difficulty as Difficulty,
-                questions: [...updatedQuestions, nextQ],
-                orbState: 'SPEAKING',
-                liveTranscript: ''
-              };
-            });
-            return;
-          }
+    const sessId = interviewState.sessionId || `ses_${Date.now()}`;
+    try {
+      const res = await api.interview.submitAnswer(sessId, answerText);
+      if (res) {
+        if (res.isCompleted && res.finalReport) {
+          setLatestReport(res.finalReport);
+          setStudent(prev => ({
+            ...prev,
+            recentReports: [res.finalReport!, ...prev.recentReports]
+          }));
+          setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
+          setActiveView('REPORT_VIEW');
+          return;
         }
-      } catch (e) {
-        console.warn('[AppContext] Submit turn failed via backend; using local evaluator.');
+
+        if (res.nextQuestion && res.turnEvaluation) {
+          setInterviewState(prev => {
+            const updatedQuestions = [...prev.questions];
+            updatedQuestions[prev.turnIndex] = res.turnEvaluation!;
+            return {
+              ...prev,
+              turnIndex: prev.turnIndex + 1,
+              currentDifficulty: res.nextQuestion!.difficulty as Difficulty,
+              questions: [...updatedQuestions, res.nextQuestion!],
+              orbState: 'SPEAKING',
+              liveTranscript: ''
+            };
+          });
+          return;
+        }
       }
+    } catch (e) {
+      console.warn('[AppContext] Submit turn evaluation error:', e);
     }
 
     // Local in-memory advance fallback
@@ -304,39 +247,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         feedback: 'Good technical reasoning, articulated tradeoffs cleanly.'
       };
 
-    let nextDifficulty: Difficulty = interviewState.currentDifficulty;
-    let nextQTurn: QuestionTurn | null = null;
-    let finalRep: DiagnosticReport | null = null;
+      const updatedQuestions = [...prev.questions];
+      updatedQuestions[prev.turnIndex] = updatedQ;
+
+      const nextTurn = prev.turnIndex + 1;
+      if (nextTurn >= prev.questions.length) {
+        setTimeout(() => endInterview(), 500);
+        return {
+          ...prev,
+          questions: updatedQuestions,
+          orbState: 'IDLE',
+          liveTranscript: ''
+        };
+      }
 
       let nextDifficulty: Difficulty = prev.currentDifficulty;
       if (prev.currentDifficulty === 'EASY') nextDifficulty = 'MEDIUM';
       else if (prev.currentDifficulty === 'MEDIUM') nextDifficulty = 'ADVANCED';
 
-    if (!nextQTurn && !finalRep) {
-      if (interviewState.currentDifficulty === 'EASY') nextDifficulty = 'MEDIUM';
-      else if (interviewState.currentDifficulty === 'MEDIUM') nextDifficulty = 'ADVANCED';
-    }
-
-      if (nextTurn >= prev.questions.length) {
-        setTimeout(() => endInterview(), 500);
-        return prev;
-      }
-      setTimeout(() => endInterview(), 500);
-      return;
-    }
-
-    setInterviewState(prev => ({
-      ...prev,
-      turnIndex: nextTurn,
-      currentDifficulty: nextDifficulty,
-      questions: updatedQuestions,
-      orbState: 'SPEAKING',
-      liveTranscript: ''
-    }));
+      return {
+        ...prev,
+        turnIndex: nextTurn,
+        currentDifficulty: nextDifficulty,
+        questions: updatedQuestions,
+        orbState: 'SPEAKING',
+        liveTranscript: ''
+      };
+    });
   };
 
-  const endInterview = () => {
-    const newReport: DiagnosticReport = {
+  const endInterview = async () => {
+    const report: DiagnosticReport = {
       id: `rep-${Date.now().toString().slice(-4)}`,
       date: new Date().toISOString().split('T')[0],
       sessionType: interviewState.type,
@@ -361,37 +302,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isFlagged: interviewState.isFlagged
     };
 
-    if (!report) {
-      report = {
-        id: `rep-${Date.now().toString().slice(-4)}`,
-        date: new Date().toISOString().split('T')[0],
-        sessionType: interviewState.type,
-        overallScore: Math.floor(Math.random() * 15) + 78,
-        technicalScore: Math.floor(Math.random() * 12) + 82,
-        communicationScore: Math.floor(Math.random() * 14) + 72,
-        averageWpm: Math.floor(Math.random() * 20) + 120,
-        totalFillerWords: Math.floor(Math.random() * 8) + 4,
-        fillerWordBreakdown: { 'uh': 4, 'um': 3, 'like': 2, 'actually': 1 },
-        skillBreakdown: [
-          { skill: 'Java & OOP Principles', score: 92, status: 'STRONG', recommendation: 'Outstanding precision regarding garbage collection and thread lifecycle.' },
-          { skill: 'Database Optimization (PostgreSQL)', score: 78, status: 'MODERATE', recommendation: 'Good knowledge of indexes; brush up on query planner explain output.' },
-          { skill: 'Distributed Messaging (Kafka)', score: 85, status: 'STRONG', recommendation: 'Clearly justified consumer group partitions and fault tolerance.' },
-          { skill: 'System Design & Tradeoffs', score: 58, status: 'NEEDS_WORK', recommendation: 'Review rate limiting algorithms (Token Bucket vs Leaky Bucket).' }
-        ],
-        actionableNextSteps: [
-          'Maintain current cadence! Your speaking rate of 128 WPM is right in the sweet spot (120–150 WPM).',
-          'Watch out for repeating "actually" at the start of technical sentences.',
-          'Study rate-limiting algorithms to polish your distributed system architecture answers.'
-        ],
-        tabSwitches: interviewState.tabSwitches,
-        isFlagged: interviewState.isFlagged
-      };
-    }
-
     setLatestReport(report);
     setStudent(prev => ({
       ...prev,
-      recentReports: [report!, ...prev.recentReports]
+      recentReports: [report, ...prev.recentReports]
     }));
 
     setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
@@ -463,11 +377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     }));
 
-    try {
-      await fetch(`${BACKEND_API_BASE}/students/criteria/${taskId}`, { method: 'PATCH' });
-    } catch {
-      // Offline fallback
-    }
+    api.tasks.toggleTask(student.id || 'stu-21cs1084', taskId).catch(() => {});
   };
 
   const verifyCriteriaTask = async (taskId: string) => {
@@ -484,16 +394,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const uploadResumeData = async (resume: ParsedResume) => {
-    setStudent(prev => ({ ...prev, resume }));
+  const uploadResumeData = async (payload: FormData | { resumeText: string; fileName?: string } | ParsedResume): Promise<ParsedResume> => {
+    let parsed: ParsedResume;
     try {
-      await fetch(`${BACKEND_API_BASE}/students/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resume })
-      });
+      parsed = await api.student.uploadResume(student.id || 'stu-21cs1084', payload);
     } catch {
-      // Offline fallback
+      if ('skills' in payload && 'projects' in payload) {
+        parsed = payload as ParsedResume;
+      } else {
+        parsed = {
+          fileName: 'Uploaded_Resume.pdf',
+          parsedAt: new Date().toISOString().split('T')[0],
+          summary: 'Full-Stack Developer with hands-on experience in Java, Spring Boot, React, and scalable cloud applications.',
+          skills: {
+            languages: ['Java', 'TypeScript', 'SQL'],
+            frameworks: ['Spring Boot', 'React', 'Tailwind CSS'],
+            databases: ['PostgreSQL', 'Redis'],
+            tools: ['Git', 'Docker']
+          },
+          projects: [
+            {
+              title: 'College Placement Readiness Engine',
+              description: 'Real-time AI diagnostic mock platform',
+              techStack: ['React', 'Node.js', 'PostgreSQL']
+            }
+          ]
+        };
+      }
+    }
+    setStudent(prev => ({ ...prev, resume: parsed }));
+    return parsed;
+  };
+
+  const updateCodingHandles = async (handles: Partial<CodingHandles>): Promise<void> => {
+    setStudent(prev => ({
+      ...prev,
+      codingHandles: {
+        leetcode: handles.leetcode ?? prev.codingHandles?.leetcode ?? '',
+        codechef: handles.codechef ?? prev.codingHandles?.codechef ?? '',
+        hackerrank: handles.hackerrank ?? prev.codingHandles?.hackerrank ?? '',
+        github: handles.github ?? prev.codingHandles?.github ?? ''
+      }
+    }));
+
+    try {
+      if (student.id) {
+        await api.student.updateCodingHandles(student.id, {
+          leetcode: handles.leetcode ?? student.codingHandles?.leetcode ?? '',
+          codechef: handles.codechef ?? student.codingHandles?.codechef ?? '',
+          hackerrank: handles.hackerrank ?? student.codingHandles?.hackerrank ?? '',
+          github: handles.github ?? student.codingHandles?.github ?? ''
+        });
+      }
+    } catch (err) {
+      console.warn('Update coding handles offline fallback:', err);
     }
   };
 
@@ -591,7 +545,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: user.role as UserRole,
       track: 'EXTERNAL',
       studentId: res.studentId
     };

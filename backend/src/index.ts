@@ -1,66 +1,37 @@
-import express from 'express';
-import cors from 'cors';
-import { config } from './config/env';
-import { errorHandler } from './middleware/errorHandler';
+import 'dotenv/config';
+import app from './app';
+import { env } from './config/env';
+import { eventBus } from './shared/events/eventBus';
+import { Events, UserRegisteredPayload } from './shared/events/events';
+import { db } from './shared/db/pool';
+import { registerModule3Handlers } from './shared/events/module3Handlers';
+import { recoverDeadRuns } from './agents/agentRunner';
 
-import authRoutes from './routes/authRoutes';
-import studentRoutes from './routes/studentRoutes';
-import taskRoutes from './routes/taskRoutes';
-import interviewRoutes from './routes/interviewRoutes';
-import listeningRoutes from './routes/listeningRoutes';
-import suggestionRoutes from './routes/suggestionRoutes';
-import adminRoutes from './routes/adminRoutes';
+// Module 3 event handlers
+registerModule3Handlers();
 
-const app = express();
-
-// Middleware
-app.use(cors({
-  origin: [config.clientUrl, 'http://localhost:5173', 'http://127.0.0.1:5173'],
-  credentials: true
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Request Logger in dev
-if (config.nodeEnv === 'development') {
-  app.use((req, res, next) => {
-    console.log(`[${req.method}] ${req.path}`);
-    next();
-  });
-}
-
-// Health Check
-app.get(['/health', '/api/health'], (req, res) => {
-  res.json({
-    status: 'UP',
-    environment: config.nodeEnv,
-    activeLlmProvider: config.llm.provider,
-    timestamp: new Date().toISOString()
-  });
+// M1 handler: write audit log on registration (non-blocking)
+// DBML §21: audit_logs uses actor_user_id + after_data (not user_id / metadata)
+eventBus.on(Events.USER_REGISTERED, async (payload: UserRegisteredPayload) => {
+  try {
+    await db.query(
+      `INSERT INTO system.audit_logs (actor_user_id, action, resource_type, resource_id, after_data)
+       VALUES ($1, 'USER_REGISTERED', 'USER', $1::uuid, $2)`,
+      [payload.userId, JSON.stringify({ studentId: payload.studentId, email: payload.email })]
+    );
+  } catch (err) {
+    console.error('[eventBus] USER_REGISTERED handler error:', err);
+  }
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/students', studentRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/interviews', interviewRoutes);
-app.use('/api/listening', listeningRoutes);
-app.use('/api/suggestions', suggestionRoutes);
-app.use('/api/admin', adminRoutes);
+const server = app.listen(env.PORT, async () => {
+  console.log(`[backend] http://localhost:${env.PORT}  (${env.NODE_ENV})`);
+  // Recover any agent runs that were RUNNING when the previous process died
+  try {
+    await recoverDeadRuns();
+  } catch (err) {
+    console.error('[startup] recoverDeadRuns error:', err);
+  }
+});
 
-// Centralized Error Handling
-app.use(errorHandler);
-
-// Start HTTP Server
-if (require.main === module) {
-  app.listen(config.port, () => {
-    console.log(`====================================================`);
-    console.log(`🚀 Communication Readiness Platform Backend`);
-    console.log(`📡 Listening on http://localhost:${config.port}`);
-    console.log(`🤖 Active LLM Provider: ${config.llm.provider.toUpperCase()}`);
-    console.log(`🏢 Target Environment: ${config.nodeEnv}`);
-    console.log(`====================================================`);
-  });
-}
-
-export default app;
+process.on('SIGTERM', () => server.close(() => process.exit(0)));
