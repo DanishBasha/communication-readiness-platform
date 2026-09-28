@@ -15,6 +15,7 @@ const schema = z.object({
   MAX_TAB_SWITCH_LIMIT: z.coerce.number().int().min(1).default(4),
   MAX_REPLAY_COUNT: z.coerce.number().int().min(1).default(2),
   MAX_QUESTIONS_PER_SESSION: z.coerce.number().int().min(1).default(5),
+  REDIS_URL: z.string().url().optional(),
 });
 
 export const env = schema.parse(process.env);

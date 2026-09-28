@@ -8,6 +8,7 @@ import { mentorRouter } from './mentor.routes';
 import { trainerRouter } from './trainer.routes';
 import { adminRouter } from './admin.routes';
 import { authenticate } from '../middleware/authenticate';
+import { programsRouter } from '../modules/programs/programs.routes';
 
 // Module 2 routers
 import { assessmentsRouter } from '../modules/assessments/assessments.routes';
@@ -17,6 +18,10 @@ import { responsesRouter } from '../modules/responses/responses.routes';
 import { reportsRouter } from '../modules/reports/reports.routes';
 import { questionBankRouter } from '../modules/question-bank/question-bank.routes';
 
+// M1 audio interview routes (bank-fallback + audio turns)
+import { interviewRouter } from './interview.routes';
+
+
 export const router = Router();
 
 // Public
@@ -25,6 +30,9 @@ router.use('/auth', authRouter);
 
 // Org lookup endpoints are read-only and needed before login (e.g. batch list on registration form).
 router.use('/org', orgRouter);
+
+// Programs — public GET for dropdowns; protected POST/PUT/DELETE inside the router itself.
+router.use('/programs', programsRouter);
 
 // Protected — authenticate on every request; individual routes add authorize() as needed
 router.use('/students', authenticate, studentRouter);
@@ -37,6 +45,21 @@ router.use('/admin', authenticate, adminRouter);
 router.use('/assessments', assessmentsRouter);
 router.use('/attempts', attemptsRouter);
 router.use('/sessions', sessionsRouter);
+// M1 audio routes mounted after M2 sessions — adds /sessions/bank-fallback and /sessions/:id/turns
+router.use('/sessions', interviewRouter);
 router.use('/responses', responsesRouter);
 router.use('/reports', reportsRouter);
 router.use('/question-bank', questionBankRouter);
+
+// Module 4 — Credits, Checklist, Verifications, Placement Eligibility
+import { creditsRouter } from '../modules/credits/credits.routes';
+import { creditPoliciesRouter } from '../modules/credits/credit-policies.routes';
+import { checklistRouter } from '../modules/checklist/checklist.routes';
+import { verificationsRouter } from '../modules/verifications/verifications.routes';
+import { placementRouter } from '../modules/placement/placement.routes';
+
+router.use('/credits', creditsRouter);
+router.use('/credit-policies', creditPoliciesRouter);
+router.use('/checklist', checklistRouter);
+router.use('/verifications', verificationsRouter);
+router.use('/placement-eligibility', placementRouter);
