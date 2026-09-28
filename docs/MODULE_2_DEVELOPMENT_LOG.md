@@ -2,13 +2,13 @@
 
 ## Current Status
 
-- **Current phase:** API data flow architecture document created (2026-09-28)
-- **Overall status:** M1 PASS. M2 PASS. M4 PASS (with M3 dependency). M3 NOT_IMPLEMENTED. Frontend fully decoupled from backend. TypeScript 0 errors. 42/42 tests pass. Authoritative architecture document `docs/API_DATA_FLOW_ARCHITECTURE.md` created on `feature/api-data-flow-architecture`.
-- **Last completed task:** API data flow architecture document on `feature/api-data-flow-architecture` branch (2026-09-28)
-- **Current task:** IDLE — awaiting next instruction
+- **Current branch:** `feature/new-ui-backend-integration` (PR #9 open against DanishBasha/communication-readiness-platform:main)
+- **Overall status:** M1 PASS. M2 PASS. M4 PASS (with M3 dependency). M3 NOT_IMPLEMENTED. Frontend now calls real backend via Vite proxy (with mock fallback). TypeScript 0 errors. 48/48 unit tests pass.
+- **Last completed task:** New team frontend UI integration + merge conflict resolution (2026-09-28)
+- **Current task:** IDLE — documentation synthesis
 - **Next task:** Module 3 implementation (critical path: ATTEMPT_COMPLETED handler → performance_profiles write unblocks M4 eligibility)
-- **TypeScript/build status:** PASS — `tsc --noEmit` exits 0, no errors (after 2026-09-28 bug fixes)
-- **Test status:** 42 tests PASS — scoring formulas, CreditService, EligibilityService, M4 event handlers, plus 6 additional tests written (2026-09-28 session)
+- **TypeScript/build status:** PASS — `tsc --noEmit` exits 0, frontend build clean (1919 modules)
+- **Test status:** 48/48 unit tests PASS (6 test files) — includes new `middleware.test.ts` from upstream. `auth.test.ts` requires live DB (times out without it — expected).
 - **Database migration status:** All migrations applied to Supabase. Live DB tested and verified against real HTTP requests.
 - **Live database:** SUPABASE — connected and verified. All M2/M4 tables confirmed present and populated during API test run.
 - **M3 integration:** NOT_IMPLEMENTED — no M3 routes in `routes/index.ts`, no M3 module code in repo. All M3 endpoints return NOT_IMPLEMENTED.

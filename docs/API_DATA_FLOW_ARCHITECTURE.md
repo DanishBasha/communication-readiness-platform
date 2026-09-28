@@ -1,10 +1,22 @@
 # API Data Flow Architecture
 
-> **Branch:** `feature/api-data-flow-architecture`
-> **Generated:** 2026-09-28
-> **Status:** Authoritative reference — update whenever routes, schemas, events, or ownership changes.
+> **Status:** Supplementary reference — see [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) for the current authoritative architecture document.  
+> **Branch written on:** `feature/api-data-flow-architecture`  
+> **Generated:** 2026-09-28  
+> **Note:** This document's architecture and event sections remain accurate. Its endpoint registry and frontend/backend relationship sections are superseded by [`API_SPECIFICATION.md`](API_SPECIFICATION.md).
 
-This document is the project's authoritative reference for every API-to-API interaction, module-to-module dependency, database ownership boundary, event flow, AI service integration, and frontend↔backend relationship in the Communication Readiness Platform.
+### Corrections applied in SYSTEM_ARCHITECTURE.md (not reflected here)
+1. Frontend was "100% mocked" — now calls real backend via Vite proxy on `feature/new-ui-backend-integration`
+2. Audio path (interview.routes.ts) uses composite comm score formula, not simple multiply
+3. Audio-only sessions CANNOT call `POST /sessions/:id/complete` (no evaluation.response_evaluations rows written)
+4. `rollNumber` is required in `POST /api/auth/register`
+5. `trainerTenure.ts` middleware exists but is NOT applied to any route
+6. `programs.routes.ts` has 10 endpoints (full CRUD), not 4
+7. Credit earn amount = `consume_amount` field (no separate earn_amount column)
+
+---
+
+This document is a historical reference for API-to-API interactions, module-to-module dependencies, database ownership boundaries, event flows, and AI service integration.
 
 ---
 
