@@ -1,9 +1,21 @@
 # API Function Catalog
-> **Source of truth:** actual backend source files as of 2026-09-28  
-> **Branch:** `feature/module-2-live-integration`  
-> **Compiler status:** `tsc --noEmit` → 0 errors (after 2026-09-28 fixes)  
-> **Live HTTP test date:** 2026-09-28 — see `docs/API_TEST_REPORT.md` for full results  
-> **DO NOT** treat `API_REFERENCE.md` as ground truth — this document is audited from code.
+
+> **Role:** Implementation audit — per-endpoint detail with file/line references and design notes.  
+> **For API contracts (endpoint registry, request/response, frontend usage):** see [`API_SPECIFICATION.md`](API_SPECIFICATION.md)  
+> **Branch audited:** `feature/module-2-live-integration` (note: current branch is `feature/new-ui-backend-integration`)  
+> **Compiler status:** `tsc --noEmit` → 0 errors  
+> **Unit tests:** 48/48 pass (updated from 42/42 — 6 new tests from upstream)  
+> **Live HTTP test date:** 2026-09-28 — see [`API_TEST_REPORT.md`](API_TEST_REPORT.md) for full results  
+> **DO NOT** treat `API_REFERENCE.md` as ground truth — it is a planning document with different field names.
+
+### Updates since last audit (2026-09-28 merge)
+- Branch: now `feature/new-ui-backend-integration`
+- Unit tests: 48/48 (was 42/42 — upstream added `middleware.test.ts` + `auth.test.ts`)
+- New endpoints added: `GET/POST /api/mentors/my-students|assign`, `GET/POST/PUT/DELETE /api/programs/*`, `GET/POST /api/sessions/bank-fallback`, `POST /api/sessions/:id/turns`, `GET /api/org/*`
+- Audio pipeline: `POST /api/sessions/:id/turns` uses different scoring formula than text path (composite comm score, NOT same as responses.routes)
+- `rollNumber` confirmed required in `POST /api/auth/register` (was missing from old docs)
+- Bug found: `POST /api/verifications/:id/verify` — frontend sends `{ outcome }`, backend expects `{ status }` → always 422
+- `trainerTenure.ts` middleware: implemented but NOT mounted on any route
 
 ### Live Test Summary (2026-09-28)
 - **Bugs fixed:** 3 (bank-fallback UUID routing, credits balance SQL, idempotency key overflow)

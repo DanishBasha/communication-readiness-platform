@@ -38,10 +38,11 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^22.10.7",
     "@types/pg": "^8.11.10",
-    "@types/supertest": "^6.0.2",
-    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.3.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "vite": "^8.3.1",
     "vitest": "^5.0.2"
   }
 }

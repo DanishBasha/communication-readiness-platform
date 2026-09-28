@@ -30,6 +30,7 @@ export const MockInterviewRoom: React.FC = () => {
     interviewState,
     submitAnswer,
     submitAudioAnswer,
+    activeAssignment,
   } = useApp();
 
   // Pending audio blob from VAD — set when speech ends, cleared after submission
@@ -366,7 +367,7 @@ export const MockInterviewRoom: React.FC = () => {
     // 3s fallback: if Redis pre-gen hasn't arrived, request bank fallback
     nextQuestionTimeoutRef.current = setTimeout(async () => {
       if (nextQuestionStatus !== 'ready') {
-        const domain = student?.pepDomain;
+        const domain = student?.track || student?.department;
         const fallback = await fetchBankFallback(currentDifficulty, domain);
         if (fallback) {
           onNextQuestionReady(fallback);
@@ -416,6 +417,30 @@ export const MockInterviewRoom: React.FC = () => {
         <div className="flex items-center gap-2 text-sm text-muted-foreground bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5">
           <span className="animate-spin text-neutral-500 text-base">⟳</span>
           <span className="text-xs text-neutral-600">Preparing your next question…</span>
+        </div>
+      )}
+
+      {activeAssignment && (
+        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-purple-900 shadow-2xs">
+          <div className="flex items-center space-x-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+            <div>
+              <span className="font-semibold text-purple-950">Assigned Drill: </span>
+              <span className="font-medium">{activeAssignment.title}</span>
+              <span className="text-purple-700 ml-1.5">· Assigned by {activeAssignment.assignedByName}</span>
+              {activeAssignment.customInstructions && (
+                <p className="text-[11px] text-purple-600 mt-0.5">Focus: {activeAssignment.customInstructions}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            <span className="px-2.5 py-0.5 rounded font-mono text-[10px] bg-purple-200/70 text-purple-900 font-semibold">
+              Due: {activeAssignment.dueDate}
+            </span>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${activeAssignment.isMandatory ? 'bg-amber-100 text-amber-900' : 'bg-neutral-100 text-neutral-700'}`}>
+              {activeAssignment.isMandatory ? 'Mandatory' : 'Optional'}
+            </span>
+          </div>
         </div>
       )}
 

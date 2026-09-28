@@ -57,9 +57,9 @@ export function useVoiceCapture({
     vadRef.current = await MicVAD.new({
       positiveSpeechThreshold,
       negativeSpeechThreshold,
-      minSpeechFrames,
+      minSpeechMs: minSpeechFrames * 10,
       // redemptionFrames: number of consecutive non-speech frames before ending a segment
-      redemptionFrames: 8,
+      redemptionMs: 80,
 
       onSpeechStart: () => onSpeechStart?.(),
 
