@@ -52,8 +52,9 @@ export const FacultyMentorPortal: React.FC = () => {
   const fetchMentees = async () => {
     try {
       setLoading(true);
+      // Use the real mentor endpoint — returns students assigned to the logged-in FACULTY_MENTOR
       const [list, progs] = await Promise.all([
-        api.admin.getMentorMentees(),
+        api.mentors.getMyStudents(),
         api.college.getPrograms(currentUser?.collegeId || 'col-1')
       ]);
       if (list) {
@@ -69,7 +70,14 @@ export const FacultyMentorPortal: React.FC = () => {
         }
       }
     } catch (err: any) {
-      console.warn('Error loading mentees or programs:', err);
+      console.warn('Error loading mentees from real API, falling back to mock:', err);
+      // Fallback to local mock data if the backend is unreachable
+      const fallback = await api.admin.getMentorMentees();
+      if (fallback) setMentees(fallback);
+      try {
+        const progs = await api.college.getPrograms(currentUser?.collegeId || 'col-1');
+        if (progs) setPrograms(progs);
+      } catch { /* non-critical */ }
     } finally {
       setLoading(false);
     }

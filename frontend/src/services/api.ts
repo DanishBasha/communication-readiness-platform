@@ -68,7 +68,7 @@ async function callGroqDirect(
   return data.choices?.[0]?.message?.content || '';
 }
 
-interface ApiError extends Error {
+export interface ApiError extends Error {
   status?: number;
   code?: string;
 }
@@ -156,6 +156,45 @@ class ApiClient {
     } catch (e) {
       console.warn(`localStorage error for ${key}:`, e);
     }
+  }
+
+  // ── Base fetch helper (auth header + json envelope + FormData support) ──────
+
+  private async apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const token = localStorage.getItem('auth_token');
+    const isFormData = options.body instanceof FormData;
+
+    const headers: Record<string, string> = {};
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (options.headers) {
+      const extra = options.headers as Record<string, string>;
+      Object.assign(headers, extra);
+    }
+
+    const res = await fetch(path, { ...options, headers });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      const e: ApiError = new Error(res.statusText);
+      e.status = res.status;
+      throw e;
+    }
+
+    if (!res.ok) {
+      const e: ApiError = new Error(json?.message ?? res.statusText);
+      e.status = res.status;
+      e.code = json?.code;
+      throw e;
+    }
+
+    return json.data as T;
   }
 
   // Build a DiagnosticReport from locally accumulated question turns
@@ -556,6 +595,15 @@ class ApiClient {
       return { user: newUser, token, studentId };
     },
 
+    logout: async () => {
+      try {
+        await this.request('POST', '/auth/logout');
+      } catch {
+        // Token may already be invalid — clear local state regardless
+      }
+      this.setToken(null);
+    },
+
     me: async () => {
       try {
         return await this.request<{ user: any; studentId?: string }>('GET', '/auth/me');
@@ -575,6 +623,33 @@ class ApiClient {
           studentId: 'stu-21cs1084',
         };
       }
+    },
+  };
+
+  // ── ORG (public, no auth required — used for registration dropdowns) ────────
+
+  org = {
+    getInstitutions: async (): Promise<any[]> => {
+      const data = await this.apiFetch<{ items: any[] }>('/api/org/institutions');
+      return data.items;
+    },
+
+    getPrograms: async (institutionId?: string): Promise<any[]> => {
+      const qs = institutionId ? `?institution_id=${encodeURIComponent(institutionId)}` : '';
+      const data = await this.apiFetch<{ items: any[] }>(`/api/org/programs${qs}`);
+      return data.items;
+    },
+
+    getBatches: async (programId?: string): Promise<any[]> => {
+      const qs = programId ? `?program_id=${encodeURIComponent(programId)}` : '';
+      const data = await this.apiFetch<{ items: any[] }>(`/api/org/batches${qs}`);
+      return data.items;
+    },
+
+    getSubdivisions: async (batchId?: string): Promise<any[]> => {
+      const qs = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : '';
+      const data = await this.apiFetch<{ items: any[] }>(`/api/org/subdivisions${qs}`);
+      return data.items;
     },
   };
 
@@ -1863,6 +1938,91 @@ class ApiClient {
       student.subProgramName = subProgramName;
       this.setStorage('admin_students', students);
       return student;
+    },
+  };
+
+  // ── MENTORS ───────────────────────────────────────────────────────────────────
+
+  mentors = {
+    getMyStudents: async (): Promise<any[]> => {
+      try {
+        const data = await this.apiFetch<{ students: any[] }>('/api/mentors/my-students');
+        return data.students.map((s: any) => ({
+          id: s.id, userId: s.user_id ?? s.id, name: s.name, email: s.email,
+          rollNumber: s.roll_number, department: s.batch_name ?? '',
+          track: s.track ?? 'HOPE_ELITE', subdivisionName: s.subdivision_name ?? '',
+          resumeUrl: s.resume_url, resumeVerified: s.resume_verified,
+          score: null, mentorName: '',
+        }));
+      } catch {
+        // Fall back to admin mock list when backend unreachable
+        return this.admin.getMentorMentees();
+      }
+    },
+
+    assignMentor: async (studentId: string, mentorId: string): Promise<any> => {
+      try {
+        const data = await this.apiFetch<{ assignment: any }>('/api/mentors/assign', {
+          method: 'POST',
+          body: JSON.stringify({ studentId, mentorId }),
+        });
+        return data.assignment;
+      } catch {
+        return { studentId, mentorId, assignedAt: new Date().toISOString() };
+      }
+    },
+  };
+
+  // ── SESSIONS ─────────────────────────────────────────────────────────────────
+
+  sessions = {
+    bankFallback: async (
+      difficulty: 'EASY' | 'MEDIUM' | 'ADVANCED',
+      domain?: string,
+    ): Promise<{ id: string; question_text: string; difficulty: string; category: string; domain: string | null }> => {
+      try {
+        const params = new URLSearchParams({ difficulty });
+        if (domain) params.append('domain', domain);
+        return await this.apiFetch(`/api/sessions/bank-fallback?${params.toString()}`);
+      } catch {
+        const q = MOCK_INTERVIEW_QUESTIONS.find(q => q.difficulty === difficulty) || MOCK_INTERVIEW_QUESTIONS[0];
+        return { id: q.id, question_text: q.questionText, difficulty: q.difficulty, category: q.category || 'General', domain: domain ?? null };
+      }
+    },
+
+    submitTurn: async (
+      sessionId: string,
+      audioBlob: Blob,
+      metadata: {
+        studentId: string;
+        questionText: string;
+        difficulty: string;
+        turnNumber: number;
+        domain?: string;
+      },
+    ): Promise<{
+      transcript: string;
+      technicalScore: number;
+      communicationScore: number;
+      overallScore: number;
+      feedback: string;
+      strengths: string;
+      weaknesses: string;
+      nextDifficulty: string;
+      audioMetrics: {
+        paceWpm: number;
+        fillerCount: number;
+        fluencyScore: number;
+        clarityScore: number;
+      };
+    }> => {
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'response.wav');
+      formData.append('metadata', JSON.stringify(metadata));
+      return await this.apiFetch(`/api/sessions/${sessionId}/turns`, {
+        method: 'POST',
+        body: formData,
+      });
     },
   };
 }
