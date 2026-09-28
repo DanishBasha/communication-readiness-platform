@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
 import { StudentHistoryModal } from '../common/StudentHistoryModal';
+import { AssignSessionModal } from '../common/AssignSessionModal';
+import { InterviewAssignment } from '../../types';
 import { 
   Sparkles, 
   Calendar, 
@@ -10,32 +12,26 @@ import {
   CheckCircle2, 
   Users, 
   Eye, 
-  X 
+  X,
+  Mic,
+  Headphones,
+  Layers,
+  Clock,
+  Check
 } from 'lucide-react';
 
 export const TrainerPortal: React.FC = () => {
-  const { currentUser, assignments, createAssignment, trainerTenures } = useApp();
+  const { currentUser, assignments, trainerTenures } = useApp();
   const [modalOpen, setModalOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [cohort, setCohort] = useState('Cloud Computing & DevOps');
-  const [dueDate, setDueDate] = useState('2026-09-24');
+  const [targetStudentForAssign, setTargetStudentForAssign] = useState<any | null>(null);
   const [success, setSuccess] = useState(false);
-
-  // Dynamic domain students
   const [domainStudents, setDomainStudents] = useState<any[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [inspectStudentId, setInspectStudentId] = useState<string | null>(null);
 
-  // Active tenure for current user
   const activeTenure = trainerTenures.find(
     t => (t.trainerEmail?.toLowerCase() === currentUser?.email?.toLowerCase()) && t.isActive
   ) || trainerTenures.find(t => t.isActive);
-
-  useEffect(() => {
-    if (activeTenure?.domain) {
-      setCohort(activeTenure.domain);
-    }
-  }, [activeTenure]);
 
   const loadDomainStudents = async () => {
     try {
@@ -55,24 +51,11 @@ export const TrainerPortal: React.FC = () => {
     loadDomainStudents();
   }, []);
 
-  const handleAssign = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    await createAssignment({
-      title: title.trim(),
-      assignedByRole: 'TRAINER',
-      assignedByName: currentUser?.name || 'Visiting Domain Trainer',
-      targetDomainOrTrack: cohort,
-      dueDate,
-      isMandatory: false
-    });
-
-    setTitle('');
-    setModalOpen(false);
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
-  };
+  const trainerAssignments = (assignments || []).filter(a => 
+    a.assignedByRole === 'TRAINER' || 
+    (currentUser?.name && a.assignedByName?.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+    (activeTenure?.domain && a.targetDomainOrTrack?.toLowerCase().includes(activeTenure.domain.toLowerCase()))
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
@@ -92,11 +75,12 @@ export const TrainerPortal: React.FC = () => {
         </div>
 
         <button 
+          type="button"
           onClick={() => setModalOpen(true)}
-          className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs cursor-pointer"
+          className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span>Assign Specialized Domain Mock</span>
+          <span>Assign Assessment</span>
         </button>
       </div>
 
@@ -135,7 +119,6 @@ export const TrainerPortal: React.FC = () => {
         </div>
       </div>
 
-      {/* Domain Candidates & Evaluated Mocks Roster */}
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
           <div>
@@ -187,13 +170,24 @@ export const TrainerPortal: React.FC = () => {
                     <td className="py-3 px-4 font-mono text-neutral-500">
                       {s.checklist || '0/15'}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right space-x-2">
+                      <button
+                        onClick={() => {
+                          setTargetStudentForAssign(s);
+                          setModalOpen(true);
+                        }}
+                        className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                        title="Assign verbal mock or listening test to this student"
+                      >
+                        <Plus className="w-3 h-3 text-emerald-600" />
+                        <span>Assign</span>
+                      </button>
                       <button
                         onClick={() => setInspectStudentId(s.id)}
                         className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-900 hover:bg-black text-white rounded-lg text-xs font-medium transition-colors cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
-                        <span>Inspect Scores & Turns</span>
+                        <span>Inspect Scores &amp; Turns</span>
                       </button>
                     </td>
                   </tr>
@@ -205,104 +199,91 @@ export const TrainerPortal: React.FC = () => {
       </div>
 
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
-        <div className="border-b border-neutral-100 pb-3">
-          <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Assigned Specialized Mock Rounds</h3>
-          <p className="text-xs text-neutral-500">Evaluate candidates on microservice resiliency, Docker orchestration, and Kubernetes pod scaling</p>
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <div>
+            <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Assigned Domain Drills &amp; Practice Sessions</h3>
+            <p className="text-xs text-neutral-500">Industry expert interview and listening comprehension drills assigned to this domain cohort.</p>
+          </div>
+          <button
+            onClick={() => {
+              setTargetStudentForAssign(null);
+              setModalOpen(true);
+            }}
+            className="text-xs bg-neutral-900 text-white px-3 py-1.5 rounded-lg hover:bg-black font-medium cursor-pointer flex items-center space-x-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Dispatch New Drill</span>
+          </button>
         </div>
 
-        <div className="space-y-3 pt-2">
-          {[
-            { title: 'Docker & Kubernetes Ingress Controllers', cohort: 'PEP Track #04', completed: '12 / 15 Evaluated' },
-            { title: 'Kafka Partition Lag & High Concurrency Resiliency', cohort: 'HOPE Elite', completed: '16 / 18 Evaluated' },
-            { title: 'AWS Cloud Architecture & Terraform State Management', cohort: 'PEP Track #07', completed: 'Scheduled for Tomorrow' },
-          ].map((item, idx) => (
-            <div key={idx} className="p-4 bg-neutral-50 border border-neutral-200/80 rounded-xl flex items-center justify-between hover:bg-neutral-100/70 transition-colors">
-              <div>
-                <p className="text-xs font-semibold text-neutral-900">{item.title}</p>
-                <div className="flex items-center space-x-2 text-[11px] text-neutral-400 mt-1">
-                  <span className="px-1.5 py-0.5 rounded bg-white border border-neutral-200 text-neutral-600 font-mono">{item.cohort}</span>
-                  <span>•</span>
-                  <span>{item.completed}</span>
+        {trainerAssignments.length === 0 ? (
+          <div className="text-center py-8 text-neutral-400 text-xs">
+            <Layers className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
+            <p className="font-semibold text-neutral-700">No domain drills assigned yet.</p>
+            <p className="mt-0.5">Click "Dispatch New Drill" to create a specialized mock or listening drill for your candidates.</p>
+          </div>
+        ) : (
+          <div className="space-y-3 pt-2">
+            {trainerAssignments.map((asg) => {
+              const isInterview = asg.sessionType === 'MOCK_INTERVIEW';
+              const subsCount = asg.submissions?.length || 0;
+              return (
+                <div key={asg.id} className="p-4 bg-neutral-50 border border-neutral-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:bg-neutral-100/70 transition-colors">
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        isInterview ? 'bg-neutral-900 text-white' : 'bg-emerald-900 text-emerald-100'
+                      }`}>
+                        {isInterview ? <Mic className="w-2.5 h-2.5 text-emerald-400" /> : <Headphones className="w-2.5 h-2.5 text-emerald-300" />}
+                        <span>{isInterview ? 'Mock Interview' : 'Listening Lab'}</span>
+                      </span>
+                      <span className="text-xs font-semibold text-neutral-900">{asg.title}</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500">
+                      <span className="px-1.5 py-0.5 rounded bg-white border border-neutral-200 text-neutral-600 font-mono">
+                        {asg.targetProgramName || asg.targetDomainOrTrack || asg.targetScope}
+                      </span>
+                      <span>•</span>
+                      <span>Due {asg.dueDate}</span>
+                      {asg.difficulty && <span>• Difficulty: {asg.difficulty}</span>}
+                      {asg.listeningPassageId && <span>• Audio: {asg.listeningPassageId}</span>}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-3 shrink-0">
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-neutral-900 block font-mono">{subsCount} / {domainStudents.length}</span>
+                      <span className="text-[10px] text-neutral-400">Submissions</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <button 
-                onClick={() => setModalOpen(true)}
-                className="flex items-center space-x-1 text-xs font-medium text-neutral-800 hover:text-black cursor-pointer"
-              >
-                <span>Dispatch drill</span>
-                <ArrowRight className="w-3 h-3 ml-1" />
-              </button>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-lg p-6 shadow-xl animate-in zoom-in-95 duration-150 space-y-4">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <h3 className="text-sm font-semibold text-neutral-900">Assign Specialized Domain Mock</h3>
-              <button onClick={() => setModalOpen(false)} className="text-neutral-400 hover:text-neutral-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAssign} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Drill Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Kubernetes Pod Autoscaling & Ingress Drill"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Target Cohort / Domain</label>
-                <input
-                  type="text"
-                  required
-                  value={cohort}
-                  onChange={(e) => setCohort(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Due Date</label>
-                <input
-                  type="date"
-                  required
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-200 rounded-xl text-neutral-700 hover:bg-neutral-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-black font-medium cursor-pointer"
-                >
-                  Dispatch Domain Drill
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AssignSessionModal
+          isOpen={modalOpen}
+          onClose={() => {
+            setModalOpen(false);
+            setTargetStudentForAssign(null);
+          }}
+          onSuccess={(asg) => {
+            setModalOpen(false);
+            setTargetStudentForAssign(null);
+            setSuccess(true);
+            setTimeout(() => setSuccess(false), 3000);
+          }}
+          defaultRole="TRAINER"
+          defaultDomain={activeTenure?.domain || 'Cloud DevOps & Distributed Systems'}
+          defaultTargetScope={targetStudentForAssign ? 'SPECIFIC_STUDENT' : 'ALL_STUDENTS'}
+          studentsList={domainStudents}
+        />
       )}
 
-      {/* STUDENT FULL HISTORY INSPECTOR MODAL */}
       {inspectStudentId && (
         <StudentHistoryModal
           studentIdOrUserId={inspectStudentId}

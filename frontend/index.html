@@ -3,11 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>Communication Readiness Platform</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="initial-loader" style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #FAFAFA; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; z-index: 9999;">
+        <div style="position: relative; width: 76px; height: 76px; margin-bottom: 20px;">
+          <img src="/logo.png" alt="Platform Logo" style="width: 100%; height: 100%; object-fit: contain; animation: logoPulse 2s ease-in-out infinite;" />
+        </div>
+        <div style="font-size: 15px; font-weight: 600; color: #171717; letter-spacing: -0.01em; margin-bottom: 4px;">Communication Readiness Platform</div>
+        <div style="font-size: 11px; color: #737373;">Placement Communication Suite</div>
+        <style>
+          @keyframes logoPulse {
+            0%, 100% { transform: scale(1); opacity: 0.88; }
+            50% { transform: scale(1.06); opacity: 1; }
+          }
+        </style>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+

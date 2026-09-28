@@ -8,6 +8,7 @@ import { MockInterviewRoom } from './components/student/MockInterviewRoom';
 import { ListeningRoom } from './components/student/ListeningRoom';
 import { DiagnosticReportView } from './components/student/DiagnosticReportView';
 import { SuperAdminPortal } from './components/portals/SuperAdminPortal';
+import { PlatformOwnerPortal } from './components/portals/PlatformOwnerPortal';
 import { PlacementCoordinatorPortal } from './components/portals/PlacementCoordinatorPortal';
 import { ProgramAdminPortal } from './components/portals/ProgramAdminPortal';
 import { FacultyMentorPortal } from './components/portals/FacultyMentorPortal';
@@ -35,6 +36,8 @@ const MainContent: React.FC = () => {
   }
 
   switch (activeRole) {
+    case 'PLATFORM_OWNER':
+      return <PlatformOwnerPortal />;
     case 'SUPER_ADMIN':
       return <SuperAdminPortal />;
     case 'PROGRAM_ADMIN':
