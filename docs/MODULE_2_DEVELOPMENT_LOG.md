@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- **Current phase:** Real HTTP API testing pass complete (2026-09-28)
-- **Overall status:** M1 PASS. M2 PASS. M4 PASS. 50/55 endpoints tested and passing. 3 runtime bugs found and fixed. M3 NOT_IMPLEMENTED (no routes registered). M2→M4 live integration verified against Supabase.
-- **Last completed task:** Real HTTP API testing against live Supabase, 3 bug fixes, `docs/API_TEST_REPORT.md` created (2026-09-28)
+- **Current phase:** API data flow architecture document created (2026-09-28)
+- **Overall status:** M1 PASS. M2 PASS. M4 PASS (with M3 dependency). M3 NOT_IMPLEMENTED. Frontend fully decoupled from backend. TypeScript 0 errors. 42/42 tests pass. Authoritative architecture document `docs/API_DATA_FLOW_ARCHITECTURE.md` created on `feature/api-data-flow-architecture`.
+- **Last completed task:** API data flow architecture document on `feature/api-data-flow-architecture` branch (2026-09-28)
 - **Current task:** IDLE — awaiting next instruction
-- **Next task:** Pending user direction (M3 implementation, PR preparation, or further testing)
+- **Next task:** Module 3 implementation (critical path: ATTEMPT_COMPLETED handler → performance_profiles write unblocks M4 eligibility)
 - **TypeScript/build status:** PASS — `tsc --noEmit` exits 0, no errors (after 2026-09-28 bug fixes)
 - **Test status:** 42 tests PASS — scoring formulas, CreditService, EligibilityService, M4 event handlers, plus 6 additional tests written (2026-09-28 session)
 - **Database migration status:** All migrations applied to Supabase. Live DB tested and verified against real HTTP requests.
@@ -187,6 +187,99 @@ Duration    ~633ms
 | B4 | `CreditService.consume()` and attempt INSERT are not in one transaction. Crash between them loses a credit without creating an attempt. | MEDIUM | Not fixed — requires M4 coordination or a DB-level compensating pattern. |
 | B7 | `session.assessment_sessions.expires_at` column exists but is never set or checked. Session timeout policy unimplemented. | LOW | Not a blocker for current flows. |
 | B11 | `GET /api/attempts/:id` has no FACULTY_MENTOR scope check — any mentor can read any student's attempt. | LOW | Pattern fix is already documented (mirror `reports.routes.ts`). |
+
+---
+
+## Work Log — 2026-09-28 (Post-Merge Integration Audit — feature/post-merge-integration-audit)
+
+### Task
+After PR #7 merged into `DanishBasha/communication-readiness-platform` (upstream/main), create `feature/post-merge-integration-audit` branch and perform a comprehensive read-only audit of the merged codebase across 9 phases: M1 health, M2 health, M1↔M2 integration, M4 compatibility, database migrations, UI compatibility, test verification, documentation, and a final structured report.
+
+### Audit Scope
+- Branch: `feature/post-merge-integration-audit` (tracking upstream/main at commit `c0f0802`)
+- Working tree: clean at audit start
+- Method: source code read, migration SQL review, TypeScript/test runs — no database writes, no code changes
+
+### TypeScript / Tests at Audit Time
+- `tsc --noEmit` → **0 errors**
+- `npm test` → **42/42 PASS** (5 test files)
+
+### M1 Audit — COMPLETE
+
+All M1 routes present and correct in current main:
+- Auth: register, login, logout, me ✅
+- Student: GET/PATCH `/:studentId`, PATCH `/resume`, PATCH `/verify-resume` ✅
+- Org: institutions, programs, batches, subdivisions (public) ✅
+- Mentor: POST /assign, GET /my-students ✅
+- Trainer: POST /assign, GET /my-subdivisions ✅
+- Admin: GET /users, PATCH /users/:id/role, PATCH /users/:id/status ✅
+- Audio interview (interviewRouter): GET /sessions/bank-fallback, POST /sessions/:id/turns ✅
+
+Known gaps (unchanged from API test):
+- `GET /api/students/me` — no `/me` route; returns 500 on UUID parse (documented as intentional)
+- `portal.routes.ts` — pure stub, no handlers
+
+### M2 Audit — COMPLETE
+
+All M2 routes present and correct, all 3 prior bugs confirmed fixed:
+- Assessments: GET/, POST/, GET/:id, PUT/:id ✅
+- Attempts: POST/start (credit consume + create), GET/:id, PUT/:id/abandon (B6 fix: terminates session) ✅
+- Sessions: POST/start, GET/:id (UUID guard fix), POST/:id/proctor-event (B5 fix: terminates attempt), POST/:id/complete (score formula, report write, ATTEMPT_COMPLETED event) ✅
+- Responses: GET/:id, POST/submit (works; requires session flow) ✅
+- Reports: GET/:attemptId (question breakdown, access control for mentor) ✅
+- Question Bank: GET/, POST/ (with skill tagging), PUT/:id, DELETE/:id (soft delete) ✅
+
+All bugs confirmed fixed in current main: UUID guard (B-UUID), SQL aggregate fix (B-SQL), ikey() hash (B-IKEY), B5, B6, B-TURNS-NO-AUTH, B-RESPONSE-SPLIT, B-QBANK-NAME, B-CLAMP.
+
+### M1 ↔ M2 Integration Audit — COMPATIBLE
+
+- `interviewRouter` mounted at `/sessions` AFTER `sessionsRouter` — correct ordering
+- UUID guard on `GET /sessions/:id` prevents routing collision with bank-fallback
+- Audio turns write to M2 evaluation tables (responses, ai_runs, response_evaluations) — schema match confirmed
+- Shared DB pool singleton — no conflicts
+- EventBus singleton wires M1 USER_REGISTERED → M4 CreditService.createAccount()
+
+### M4 Compatibility Audit — COMPATIBLE (with M3 dependency)
+
+All M4 routes confirmed correct. Credit flow (ATTEMPT_COMPLETED → earn, MENTOR_VERIFIED → recalculate, CHECKLIST_ITEM_TOGGLED → recalculate, USER_REGISTERED → createAccount) wired correctly.
+
+**B-PERF-SCORE (M3 dependency):** `EligibilityService.recalculate()` reads `performance.performance_profiles.overall_score`. Since M3 is not implemented, this table is empty → `perfScore = 0.0` → blocking reason "Performance score 0.0 is below the 60.0 threshold" always fires → **no student can achieve placement eligibility until M3 writes performance_profiles**. This is a known, expected M3 dependency — not a code bug.
+
+**DESIGN-01 (unchanged):** `event-handlers.ts` reads `consume_amount` for earn amount. Both default to 10; functionally correct.
+
+### Database Audit — CORRECTLY STRUCTURED
+
+Migration ordering verified: 001-015 (M1), 016 (transcripts), 031-043 (M2), 061-069 (M3 schemas), 080 (skills seed), 091-099 (M4), 105-106 (seeds), 115 (cross-schema FKs), 116 (transcript FK). All gaps are intentional reservation spaces.
+
+All cross-schema FKs properly deferred to migration 115:
+- `session.question_bank_item_skills.skill_id → performance.skills` ✅
+- `session.questions.listening_story_id / primary_skill_id → performance.*` ✅
+- All M4 → org.students FKs ✅
+
+M3 tables (062-068: performance_profiles, snapshots, skill_performances, listening_stories, knowledge docs/chunks) exist in schema but are empty — expected, schemas created in advance.
+
+### UI Compatibility Audit — FRONTEND FULLY DECOUPLED
+
+`frontend/src/services/api.ts` is 100% mock-based:
+- Auth: creates `jwt_mock_...` tokens, never calls `/api/auth/*`
+- Interview: calls Groq API directly from client (client-side key)
+- All data from localStorage or hardcoded mock data
+- No real HTTP calls to any backend endpoint
+
+Frontend types (`types/index.ts`) define frontend-specific models not aligned to backend schemas (SUPER_ADMIN role, HOPE_ELITE track, etc.). Frontend and backend are parallel implementations — both work standalone; neither is currently wired to the other.
+
+### Remaining Issues (all pre-existing)
+
+| ID | Issue | Severity |
+|----|-------|----------|
+| B-PERF-SCORE | M3 not implemented → perfScore always 0 → no student can be eligible | MEDIUM (M3 dependency) |
+| B4 | CreditService.consume() + attempt INSERT not in one transaction | MEDIUM |
+| B7 | session.assessment_sessions.expires_at never set or checked | LOW |
+| B11 | GET /api/attempts/:id has no FACULTY_MENTOR scope check | LOW |
+| DESIGN-01 | event-handlers.ts reads consume_amount for earn amount | LOW |
+
+### Files Modified
+None — read-only audit. No code changes made during this audit.
 
 ---
 
@@ -1410,6 +1503,222 @@ NOT VERIFIED:
 - `POST /api/listening/start` — creates LISTENING session, fetches story from `performance.listening_stories` (M3 table — use plain query, no FK in code yet)
 - `GET /api/listening/:id/replay` — returns story content, increments `replay_count` in `state_data`, enforces ≤ `MAX_REPLAY_COUNT` (env, default 2)
 - `POST /api/listening/:id/submit` — saves responses (input_type = TEXT), evaluates (if FastAPI endpoint confirmed), generates report
+
+---
+
+---
+
+## Work Log — 2026-09-28 (API Data Flow Architecture Document)
+
+### Task
+Create `docs/API_DATA_FLOW_ARCHITECTURE.md` — a permanent authoritative reference document covering all API-to-API interactions, module-to-module data flows, database schema ownership, event architecture, AI service integration, and frontend↔backend relationship. Branch: `feature/api-data-flow-architecture`.
+
+### Approach
+Read all route files, service files, event handlers, and the frontend api.ts. Then compose a 17-section document with Mermaid diagrams covering the entire system.
+
+### Files Read
+- `backend/src/index.ts` — startup, event handler registration
+- `backend/src/shared/events/events.ts` — 4 events + typed payloads
+- `backend/src/shared/events/eventBus.ts` — singleton EventEmitter
+- `backend/src/config/env.ts` — 14 validated env vars
+- `backend/src/middleware/authenticate.ts` — JWT + token_version revocation
+- `backend/src/middleware/authorize.ts` — requireRole, requireStudentSelfOrStaff
+- `backend/src/routes/auth.routes.ts` — register/login/logout/me
+- `backend/src/routes/interview.routes.ts` — bank-fallback + audio turns
+- `backend/src/modules/attempts/attempts.routes.ts` — attempt lifecycle
+- `backend/src/modules/sessions/sessions.routes.ts` — session state machine + complete
+- `backend/src/modules/responses/responses.routes.ts` — text response submission
+- `backend/src/modules/reports/reports.routes.ts` — report retrieval
+- `backend/src/modules/question-bank/question-bank.routes.ts` — QB CRUD
+- `backend/src/modules/evaluation/ai-client.ts` — FastAPI HTTP client
+- `backend/src/modules/evaluation/scoring.ts` — score computation formulas
+- `backend/src/modules/credits/credits.routes.ts` — credit balance/transactions/adjust
+- `backend/src/modules/credits/credits.service.ts` — CreditService (SELECT FOR UPDATE, ikey)
+- `backend/src/modules/credits/event-handlers.ts` — registerM4EventHandlers
+- `backend/src/modules/checklist/checklist.routes.ts` — checklist CRUD + progress
+- `backend/src/modules/verifications/verifications.routes.ts` — mentor verification flow
+- `backend/src/modules/placement/placement.routes.ts` — eligibility endpoints
+- `backend/src/modules/placement/eligibility.service.ts` — EligibilityService.recalculate
+- `frontend/src/services/api.ts` — ApiClient (100% mocked, localStorage + Groq)
+
+### Document Created: docs/API_DATA_FLOW_ARCHITECTURE.md
+
+17 sections:
+1. Platform Architecture Overview (ASCII + topology)
+2. Service Topology (table)
+3. Database Schema Ownership (ownership table + dependency diagram)
+4. API Endpoint Registry (all 62 endpoints across M1/M2/M4)
+5. Authentication & Authorization Flow (JWT lifecycle, middleware, roles)
+6. Module 1 — Identity, Org & User Management
+7. Module 2 — Assessment Lifecycle (mermaid sequence diagram)
+8. Module 2 — Session & Question Flow (mermaid + state machines)
+9. Module 2 — Response Submission & Evaluation (Path A text, Path B audio)
+10. AI Service Integration (contracts, graceful degradation, config)
+11. Module 4 — Credit System (CreditService architecture, ikey, flow diagram)
+12. Module 4 — Checklist & Mentor Verification (state machine + mermaid)
+13. Module 4 — Placement Eligibility (triggers table + criteria)
+14. Event Architecture (EventBus, 4-event registry, flow diagram)
+15. Cross-Module Contracts (M1→M2, M2→M4, M4→M3 read, route conflict resolution)
+16. Frontend ↔ Backend Relationship (mocked state, gap analysis, integration plan)
+17. Environment Configuration (all env vars + SSL + Redis policies)
+
+### Key Architecture Facts Documented
+- EventBus is in-process Node.js EventEmitter (not distributed)
+- `CHECKLIST_ITEM_TOGGLED` and `MENTOR_VERIFIED` events fire but have no registered handlers; eligibility is recalculated via direct service calls
+- Two audio evaluation paths: turns endpoint (multipart audio → `/ai/evaluate-response`) vs text submit (transcript → `/ai/evaluate-turn`)
+- Score normalization: FastAPI 0–10 → Node.js × 10 → 0–100, clamped
+- Overall score formula: technical × 0.70 + communication × 0.30
+- Frontend is 100% mocked with localStorage; zero real HTTP calls to Express backend
+- `performance.performance_profiles` (M3 table) is read by M4 EligibilityService but M3 is not implemented → returns 0 rows → perfScore = 0 → eligibility blocked
+- UUID guard on `GET /sessions/:id` routes non-UUID paths to interviewRouter (bank-fallback fix)
+
+### No Code Changes
+This was a documentation-only task. No TypeScript files modified. No migrations. No routes changed.
+
+---
+
+---
+
+## Work Log — 2026-09-28 (Dynamic Program Hierarchy + Student Import + Assessment Targeting)
+
+### Task
+Implement the full Training Program + Student Import + Assessment Assignment foundation.
+
+### Branch
+`feature/frontend-backend-integration`
+
+### Migrations Applied
+
+| File | Content | Status |
+|------|---------|--------|
+| `120_org_sub_programs.sql` | New table `org.sub_programs (program_id, name, code, is_active)` | ✅ Applied 2026-09-28 |
+| `121_org_student_programs.sql` | New junction table `org.student_programs (student_id, program_id, sub_program_id)` | ✅ Applied |
+| `122_assessment_targeting.sql` | Added `target_program_id`, `target_sub_program_id` to `assessment.assessments` | ✅ Applied |
+| `123_student_track_import.sql` | Added `IMPORT` value to `org.student_track` enum | ✅ Applied |
+
+All 4 migrations applied to Supabase `communication-readiness-dev`. Total: 56 migrations in `system.migrations`.
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `backend/src/modules/programs/programs.routes.ts` | Program/sub-program CRUD + student listing endpoints |
+| `docs/STUDENT_IMPORT_FORMAT.md` | Official CSV format specification and documentation |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `backend/src/routes/admin.routes.ts` | Added `POST /api/admin/students/import` with CSV parser and row-level transaction logic |
+| `backend/src/routes/index.ts` | Registered `programsRouter` at `/api/programs` |
+| `backend/src/modules/assessments/assessments.routes.ts` | Extended create/update/GET with `target_program_id`/`target_sub_program_id` |
+| `backend/src/modules/attempts/attempts.routes.ts` | **Critical fix:** Added targeting enforcement check at attempt start |
+| `docs/API_DATA_FLOW_ARCHITECTURE.md` | Added Section 18: Program Hierarchy & Student Import (with Mermaid diagrams) |
+
+### API Surface Added
+
+```
+GET  /api/programs                                              — public, no auth
+GET  /api/programs/:id/sub-programs                            — public
+GET  /api/programs/:id/students                                — FACULTY_MENTOR+
+GET  /api/programs/:id/sub-programs/:subId/students            — FACULTY_MENTOR+
+POST /api/programs                                             — PROGRAM_ADMIN
+PUT  /api/programs/:id                                         — PROGRAM_ADMIN
+DEL  /api/programs/:id                                         — PROGRAM_ADMIN (soft-deactivate sub_programs)
+POST /api/programs/:id/sub-programs                            — PROGRAM_ADMIN
+PUT  /api/programs/:id/sub-programs/:subId                     — PROGRAM_ADMIN
+DEL  /api/programs/:id/sub-programs/:subId                     — PROGRAM_ADMIN (soft-deactivate)
+POST /api/admin/students/import                                — PROGRAM_ADMIN (CSV upload)
+```
+
+Assessment endpoints extended (not breaking):
+```
+POST /api/assessments        — now accepts optional targetProgramId, targetSubProgramId
+PUT  /api/assessments/:id    — now accepts optional targetProgramId, targetSubProgramId
+GET  /api/assessments        — now returns target_program_name, target_sub_program_name
+GET  /api/assessments/:id    — now returns targeting fields + program/sub-program names
+```
+
+### Role Model Decision
+
+No `SUPER_ADMIN` role exists in the database or codebase. The `identity.user_role` enum has:
+`STUDENT | FACULTY_MENTOR | PROGRAM_ADMIN | TRAINER | PLACEMENT_COORDINATOR`
+
+**Decision:** `PROGRAM_ADMIN` is the system's Super Admin equivalent.
+- Can create/update programs and sub-programs
+- Can bulk-import students via CSV
+- Can manage user roles and statuses
+- Cannot grant PROGRAM_ADMIN to others (existing guard in admin.routes.ts prevents privilege escalation)
+
+### Integration Test Results (2026-09-28)
+
+#### Program Hierarchy
+- ✅ `POST /api/programs` created PEP and HOPE
+- ✅ `POST /api/programs/:id/sub-programs` created Full Stack, Cyber, AI under PEP
+- ✅ `GET /api/programs` returns nested structure correctly (no hardcoded values)
+
+#### Student Import
+- ✅ 3 test students imported via CSV (test.student1-3@example.com)
+- ✅ Passwords hashed with bcrypt, plaintext not stored
+- ✅ `student_programs` associations created correctly
+- ✅ Auto-generated roll numbers: `IMP-XXXXXX` format
+- ✅ IMPORT batch auto-created per program
+
+#### Duplicate Import
+- ✅ Re-importing same file → `already_enrolled: 3`, 0 created, 0 duplicates in DB
+- ✅ Sub-program update (Cyber → Full Stack) → `updated_students: 1`
+- ✅ Same email twice in one file → first processed, second skipped with clear error message
+
+#### Assessment Targeting
+All 5 targeting scenarios verified at runtime:
+
+| Student | Program | Assessment Target | Expected | Result |
+|---------|---------|------------------|----------|--------|
+| Student1 | PEP/Full Stack | PEP (program only) | ✅ ALLOW | ✅ success |
+| Student1 | PEP/Full Stack | PEP/Cyber | ❌ DENY | ✅ 403 NOT_ENROLLED |
+| Student3 | HOPE | HOPE | ✅ ALLOW | ✅ success |
+| Student3 | HOPE | Open (no target) | ✅ ALLOW | ✅ success |
+| Student3 | HOPE | PEP (program only) | ❌ DENY | ✅ 403 NOT_ENROLLED |
+
+Enforcement is in `POST /api/attempts/start` in `attempts.routes.ts`. The check runs BEFORE credit consumption so no credits are lost for blocked attempts.
+
+#### M4 Compatibility
+- ✅ Credit accounts created for all 3 imported students (via `USER_REGISTERED` event)
+- ✅ Balances reflect attempt consumption correctly
+- ✅ Placement eligibility rows created
+
+#### Tests
+- ✅ 42/42 tests pass (5 test files) — no regressions
+- ✅ TypeScript: 0 errors (both backend and frontend)
+- ✅ Backend production build: `npm run build` passes
+- ✅ Frontend production build: `npm run build` passes
+
+### Remaining Known Issues (pre-existing)
+
+| ID | Issue | Severity |
+|----|-------|----------|
+| B-PERF-SCORE | M3 not implemented → perfScore always 0 | MEDIUM |
+| B4 | CreditService.consume() + attempt INSERT not in one transaction | MEDIUM |
+| B7 | session.expires_at never set | LOW |
+| B11 | GET /api/attempts/:id no FACULTY_MENTOR scope check | LOW |
+
+### Deployment Readiness Check
+
+| Check | Status |
+|-------|--------|
+| Backend build (`npm run build`) | ✅ Clean |
+| Frontend build (`npm run build`) | ✅ Clean (pre-existing chunk size warning, not our code) |
+| TypeScript | ✅ 0 errors |
+| Tests | ✅ 42/42 pass |
+| Migrations applied to Supabase | ✅ 4/4 |
+| Schema verified in DB | ✅ Tables, columns, FKs, enum all exist |
+| `app.listen(env.PORT)` — no explicit host → binds 0.0.0.0 | ✅ Render compatible |
+| CORS from env var `CORS_ORIGIN` | ✅ Configurable |
+| No localhost in production paths | ✅ (vite proxy is dev-only) |
+| No render.yaml / vercel.json present | ⚠️ Deployment config must be set up separately |
+| `CORS_ORIGIN` must be set to Vercel production URL for prod | ⚠️ Pre-existing env gap |
+
+**NOT DEPLOYED** — awaiting explicit authorization.
 
 ---
 

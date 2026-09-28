@@ -8,6 +8,7 @@ import { mentorRouter } from './mentor.routes';
 import { trainerRouter } from './trainer.routes';
 import { adminRouter } from './admin.routes';
 import { authenticate } from '../middleware/authenticate';
+import { programsRouter } from '../modules/programs/programs.routes';
 
 // Module 2 routers
 import { assessmentsRouter } from '../modules/assessments/assessments.routes';
@@ -29,6 +30,9 @@ router.use('/auth', authRouter);
 
 // Org lookup endpoints are read-only and needed before login (e.g. batch list on registration form).
 router.use('/org', orgRouter);
+
+// Programs — public GET for dropdowns; protected POST/PUT/DELETE inside the router itself.
+router.use('/programs', programsRouter);
 
 // Protected — authenticate on every request; individual routes add authorize() as needed
 router.use('/students', authenticate, studentRouter);
