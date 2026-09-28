@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
-  User, 
   FileText, 
   CheckCircle2, 
   Clock, 
@@ -9,24 +8,22 @@ import {
   AlertTriangle, 
   Award, 
   ChevronDown, 
-  ChevronUp, 
-  ExternalLink,
-  Code2,
-  Calendar,
-  Layers,
-  GraduationCap
+  ChevronUp
 } from 'lucide-react';
 import { api } from '../../services/api';
 
 interface StudentHistoryModalProps {
-  studentIdOrUserId: string;
+  studentIdOrUserId?: string;
+  studentId?: string;
   onClose: () => void;
 }
 
 export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
   studentIdOrUserId,
+  studentId,
   onClose
 }) => {
+  const targetId = studentIdOrUserId || studentId || '';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any | null>(null);
@@ -39,7 +36,7 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
       setLoading(true);
       setError(null);
       try {
-        const res = await api.admin.getStudentFullHistory(studentIdOrUserId);
+        const res = await api.admin.getStudentFullHistory(targetId);
         if (isMounted) {
           setData(res);
           if (res.interviewSessions && res.interviewSessions.length > 0) {
@@ -95,7 +92,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto animate-fade-in">
       <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-neutral-200">
         
-        {/* Modal Header */}
         <div className="p-5 border-b border-neutral-200 bg-neutral-50 flex items-start justify-between">
           <div className="flex items-start space-x-3">
             <div className="w-10 h-10 rounded-xl bg-neutral-900 text-white flex items-center justify-center font-bold text-sm">
@@ -124,7 +120,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
           </button>
         </div>
 
-        {/* Sub-Header Metrics Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-neutral-100/70 border-b border-neutral-200 text-xs font-mono">
           <div className="bg-white p-2.5 rounded-xl border border-neutral-200/80">
             <span className="text-[10px] text-neutral-400 block uppercase">LeetCode Solved</span>
@@ -146,7 +141,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
           </div>
         </div>
 
-        {/* Tab Navigation */}
         <div className="flex border-b border-neutral-200 px-5 pt-3 space-x-6 text-xs font-medium">
           <button
             onClick={() => setActiveTab('sessions')}
@@ -183,17 +177,15 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Contents */}
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
 
-          {/* TAB 1: INTERVIEW SESSIONS & TURNS */}
           {activeTab === 'sessions' && (
             <div className="space-y-4">
               {interviewSessions.length === 0 ? (
                 <div className="p-8 text-center border-2 border-dashed border-neutral-200 rounded-2xl">
                   <Mic className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
                   <p className="text-xs font-semibold text-neutral-700">No mock interview sessions recorded yet.</p>
-                  <p className="text-[11px] text-neutral-500 mt-1">When the student attends practice or mock drills, their complete turn-by-turn transcripts, speech telemetry, and AI scorecards will appear here.</p>
+                  <p className="text-[11px] text-neutral-500 mt-1">When the student attends practice or mock drills, their complete turn-by-turn transcripts, speech telemetry, and diagnostic scorecards will appear here.</p>
                 </div>
               ) : (
                 interviewSessions.map((sess: any) => {
@@ -244,11 +236,9 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Expanded Turns & Telemetry */}
                       {isExpanded && (
                         <div className="p-4 border-t border-neutral-200 space-y-4 bg-white">
                           
-                          {/* Diagnostic Summary if available */}
                           {sess.report && (
                             <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
                               <h4 className="text-xs font-bold text-neutral-900 flex items-center">
@@ -264,7 +254,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
                             </div>
                           )}
 
-                          {/* Turn by turn Q&A */}
                           <div className="space-y-3">
                             <h4 className="text-xs font-bold text-neutral-900 uppercase font-mono tracking-wider">
                               Turn-by-Turn Question &amp; Transcript Analysis ({sess.turns?.length || 0})
@@ -292,7 +281,7 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
                                   </div>
                                   {turn.feedback && (
                                     <div className="text-[11px] text-neutral-600 bg-emerald-50/60 border border-emerald-200/60 p-2 rounded">
-                                      <strong>AI Coach Evaluation:</strong> {turn.feedback}
+                                      <strong>Evaluation Feedback:</strong> {turn.feedback}
                                     </div>
                                   )}
                                 </div>
@@ -311,7 +300,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: PARSED RESUME & SKILLS */}
           {activeTab === 'resume' && (
             <div className="space-y-4">
               {!resume ? (
@@ -330,7 +318,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
                     <p className="text-xs text-neutral-700 leading-relaxed">{resume.summary}</p>
                   </div>
 
-                  {/* Skills Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="p-3 bg-white border border-neutral-200 rounded-xl space-y-2">
                       <span className="text-[10px] font-mono uppercase text-neutral-400 block font-bold">Programming Languages</span>
@@ -385,7 +372,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Projects */}
                   <div className="space-y-2">
                     <span className="text-xs font-bold text-neutral-900 block font-mono uppercase">Verified Engineering Projects</span>
                     {resume.projects && resume.projects.length > 0 ? (
@@ -411,7 +397,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: CRITERIA CHECKLIST */}
           {activeTab === 'checklist' && (
             <div className="space-y-2">
               {checklist.map((task: any) => (
@@ -447,7 +432,6 @@ export const StudentHistoryModal: React.FC<StudentHistoryModalProps> = ({
 
         </div>
 
-        {/* Modal Footer */}
         <div className="p-4 border-t border-neutral-200 bg-neutral-50 flex items-center justify-end">
           <button
             onClick={onClose}

@@ -12,9 +12,7 @@ import {
   X,
   Radio,
   RotateCcw,
-  Sparkles,
   Zap,
-  CheckCircle2,
   Clock,
   Play,
   Volume2,
@@ -30,12 +28,11 @@ declare global {
 
 export const MockInterviewRoom: React.FC = () => {
   const { 
-    student,
     interviewState, 
-    submitAnswer
+    submitAnswer,
+    activeAssignment
   } = useApp();
 
-  // State flags for UI display
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeakingQuestion, setIsSpeakingQuestion] = useState(false);
@@ -46,10 +43,9 @@ export const MockInterviewRoom: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
   const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
-  const [autoConversationMode, setAutoConversationMode] = useState(true);
+  const [autoConversationMode] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
 
-  // References to keep event handlers, SpeechSynthesis and Web Speech API stable without cyclic re-renders
   const recognitionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -57,7 +53,6 @@ export const MockInterviewRoom: React.FC = () => {
   const silenceTimerRef = useRef<any>(null);
   const countdownIntervalRef = useRef<any>(null);
 
-  // Mutable refs to prevent stale closure bugs in timers & recognition callbacks
   const isRecordingRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isSubmittingRef = useRef(false);
@@ -70,12 +65,10 @@ export const MockInterviewRoom: React.FC = () => {
   const totalQuestions = interviewState.questions.length;
   const showWarning = interviewState.tabSwitches > 0 && !warningDismissed;
 
-  // Sync autoModeRef with state
   useEffect(() => {
     autoModeRef.current = autoConversationMode;
   }, [autoConversationMode]);
 
-  // Clean up all resources on unmount
   useEffect(() => {
     return () => {
       if ('speechSynthesis' in window) {
@@ -87,7 +80,6 @@ export const MockInterviewRoom: React.FC = () => {
     };
   }, []);
 
-  // Stop recognition and mic streams cleanly
   const stopRecordingResources = () => {
     isRecordingRef.current = false;
     setIsRecording(false);
@@ -128,13 +120,11 @@ export const MockInterviewRoom: React.FC = () => {
     }
   };
 
-  // Submit Answer to Backend Gateway & FastAPI
   const handleExecuteSubmit = async (textToSubmit?: string) => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
-    // Stop recording and timers
     stopRecordingResources();
 
     const candidateAnswer = (textToSubmit || latestSpeechRef.current || currentSpeechText).trim();
@@ -153,20 +143,17 @@ export const MockInterviewRoom: React.FC = () => {
     }
   };
 
-  // Voice Activity Silence Detector: Auto-submits after natural pause
   const handleSpeechInput = (transcript: string) => {
     latestSpeechRef.current = transcript;
     setCurrentSpeechText(transcript);
 
     if (!autoModeRef.current) return;
 
-    // Reset silence timer
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
 
     const words = transcript.trim().split(/\s+/).filter(Boolean);
 
-    // Once candidate speaks at least 3 words, begin silence monitoring
     if (words.length >= 3) {
       let secondsLeft = 3;
       setSilenceCountdown(secondsLeft);
@@ -185,7 +172,6 @@ export const MockInterviewRoom: React.FC = () => {
       silenceTimerRef.current = setTimeout(() => {
         if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
         setSilenceCountdown(null);
-        // Candidate has finished speaking -> execute submit
         handleExecuteSubmit(latestSpeechRef.current);
       }, 2600);
     } else {
@@ -193,12 +179,10 @@ export const MockInterviewRoom: React.FC = () => {
     }
   };
 
-  // Start continuous Speech Recognition & Mic Stream
   const startRecording = async () => {
     if (isRecordingRef.current || isSubmittingRef.current) return;
     setMicPermissionError(null);
 
-    // Ensure AI speech synthesis is silenced
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       isSpeakingRef.current = false;
@@ -208,7 +192,6 @@ export const MockInterviewRoom: React.FC = () => {
     isRecordingRef.current = true;
     setIsRecording(true);
 
-    // Initialize Web Audio volume meter for VoiceOrb reactivity
     try {
       if (!mediaStreamRef.current) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -244,7 +227,6 @@ export const MockInterviewRoom: React.FC = () => {
       }
     }
 
-    // Start Web Speech Recognition
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRec) {
       try {
@@ -269,14 +251,13 @@ export const MockInterviewRoom: React.FC = () => {
         };
 
         recognition.onerror = (event: any) => {
-          if (event.error === 'no-speech') return; // Normal pause in conversation
+          if (event.error === 'no-speech') return;
           if (event.error === 'not-allowed') {
             setMicPermissionError("Microphone permission was denied. Please allow microphone access.");
           }
         };
 
         recognition.onend = () => {
-          // Keep recording alive if still in listening mode
           if (isRecordingRef.current && !isSubmittingRef.current && !isSpeakingRef.current) {
             try {
               recognition.start();
@@ -292,15 +273,12 @@ export const MockInterviewRoom: React.FC = () => {
     }
   };
 
-  // Speak AI Question with Natural Speech Synthesis
   const speakQuestion = (questionText: string) => {
     if (!questionText) return;
 
-    // First stop mic to prevent acoustic echo
     stopRecordingResources();
 
     if (!('speechSynthesis' in window)) {
-      // Fallback: If browser lacks speech synthesis, jump straight to recording
       setIsSpeakingQuestion(false);
       isSpeakingRef.current = false;
       startRecording();
@@ -319,7 +297,6 @@ export const MockInterviewRoom: React.FC = () => {
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
-    // Pick a natural English voice if available
     const voices = window.speechSynthesis.getVoices();
     const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('David')));
     if (naturalVoice) utterance.voice = naturalVoice;
@@ -331,7 +308,6 @@ export const MockInterviewRoom: React.FC = () => {
       isSpeakingRef.current = false;
       setIsSpeakingQuestion(false);
 
-      // AUTOMATIC HANDS-FREE TRANSITION: Question finished -> open mic immediately!
       if (autoModeRef.current) {
         setTimeout(() => {
           startRecording();
@@ -350,7 +326,6 @@ export const MockInterviewRoom: React.FC = () => {
       handleEnd();
     };
 
-    // Chrome safety timer: Chromium onend bug fallback
     const safetyTimeout = Math.max(5000, questionText.length * 90);
     setTimeout(() => {
       if (isSpeakingRef.current) {
@@ -361,7 +336,6 @@ export const MockInterviewRoom: React.FC = () => {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Turn Lifecycle: When current question ID changes, speak the new question
   useEffect(() => {
     if (!currentQ?.id || !currentQ?.questionText) return;
     if (currentQuestionIdRef.current === currentQ.id) return;
@@ -371,19 +345,16 @@ export const MockInterviewRoom: React.FC = () => {
     latestSpeechRef.current = "";
     setSilenceCountdown(null);
 
-    // If candidate has already started, speak the next question automatically!
     if (hasSessionStarted) {
       speakQuestion(currentQ.questionText);
     }
   }, [currentQ?.id, currentQ?.questionText, hasSessionStarted]);
 
-  // Initial user start handler
   const handleStartSession = () => {
     setHasSessionStarted(true);
     speakQuestion(currentQ.questionText);
   };
 
-  // Replay question audio
   const handleReplayQuestion = () => {
     speakQuestion(currentQ.questionText);
   };
@@ -399,7 +370,6 @@ export const MockInterviewRoom: React.FC = () => {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6 animate-in fade-in duration-200">
       
-      {/* Proctoring Warning Banner */}
       {showWarning && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between text-rose-900 shadow-xs animate-in slide-in-from-top duration-150">
           <div className="flex items-center space-x-3">
@@ -418,7 +388,6 @@ export const MockInterviewRoom: React.FC = () => {
         </div>
       )}
 
-      {/* Mic Warning */}
       {micPermissionError && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between text-amber-900 text-xs">
           <span>{micPermissionError}</span>
@@ -426,13 +395,36 @@ export const MockInterviewRoom: React.FC = () => {
         </div>
       )}
 
-      {/* Top Header & Proctor Bar */}
+      {activeAssignment && (
+        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-purple-900 shadow-2xs">
+          <div className="flex items-center space-x-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+            <div>
+              <span className="font-semibold text-purple-950">Assigned Drill: </span>
+              <span className="font-medium">{activeAssignment.title}</span>
+              <span className="text-purple-700 ml-1.5">· Assigned by {activeAssignment.assignedByName}</span>
+              {activeAssignment.customInstructions && (
+                <p className="text-[11px] text-purple-600 mt-0.5">Focus: {activeAssignment.customInstructions}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            <span className="px-2.5 py-0.5 rounded font-mono text-[10px] bg-purple-200/70 text-purple-900 font-semibold">
+              Due: {activeAssignment.dueDate}
+            </span>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${activeAssignment.isMandatory ? 'bg-amber-100 text-amber-900' : 'bg-neutral-100 text-neutral-700'}`}>
+              {activeAssignment.isMandatory ? 'Mandatory' : 'Optional'}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
           <div>
             <div className="flex items-center space-x-2">
-              <h2 className="text-sm font-semibold tracking-tight text-neutral-900">Conversational AI Mock Interview</h2>
+              <h2 className="text-sm font-semibold tracking-tight text-neutral-900">Technical Mock Interview Room</h2>
               <span className="px-2 py-0.5 text-[10px] font-medium bg-neutral-100 text-neutral-600 rounded border border-neutral-200 font-mono">
                 Turn {questionNumber} of {totalQuestions}
               </span>
@@ -440,12 +432,11 @@ export const MockInterviewRoom: React.FC = () => {
                 <Zap className="w-3 h-3 mr-1" /> HANDS-FREE MODE
               </span>
             </div>
-            <p className="text-[11px] text-neutral-500">Autonomous voice interaction: AI Speaks $\rightarrow$ Listens $\rightarrow$ Submits on pause</p>
+            <p className="text-[11px] text-neutral-500">Hands-free voice interaction: Speaks Question $\rightarrow$ Listens $\rightarrow$ Submits on pause</p>
           </div>
         </div>
 
         <div className="flex items-center space-x-3">
-          {/* Speaker Mute/Unmute Toggle */}
           <button
             onClick={() => {
               if (!isMuted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -480,10 +471,8 @@ export const MockInterviewRoom: React.FC = () => {
         </div>
       </div>
 
-      {/* Center Voice Arena */}
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-8 shadow-xs flex flex-col items-center justify-center text-center space-y-6">
         
-        {/* Active Question Badge */}
         <div className="flex items-center space-x-2">
           <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-neutral-900 text-white font-mono">
             QUESTION {questionNumber}
@@ -498,7 +487,6 @@ export const MockInterviewRoom: React.FC = () => {
           )}
         </div>
 
-        {/* Spoken AI Question Text */}
         <div className="max-w-2xl space-y-2">
           <p className="text-lg sm:text-xl font-medium tracking-tight text-neutral-900 leading-relaxed">
             "{currentQ.questionText}"
@@ -515,7 +503,6 @@ export const MockInterviewRoom: React.FC = () => {
           )}
         </div>
 
-        {/* Pre-Session Start Call to Action (Satisfies Browser Autoplay Gesture) */}
         {!hasSessionStarted ? (
           <div className="py-6 flex flex-col items-center space-y-4 animate-in fade-in zoom-in duration-200">
             <div className="w-16 h-16 rounded-2xl bg-neutral-950 flex items-center justify-center text-white shadow-md">
@@ -536,9 +523,7 @@ export const MockInterviewRoom: React.FC = () => {
             </button>
           </div>
         ) : (
-          /* Live Conversational Voice Stage */
           <>
-            {/* Voice Orb with Real-Time Speech Animation */}
             <div className="py-2">
               <VoiceOrb 
                 state={orbState}
@@ -548,10 +533,10 @@ export const MockInterviewRoom: React.FC = () => {
               
               <div className="mt-3 flex flex-col items-center space-y-1">
                 <p className="text-xs font-semibold text-neutral-700 font-mono uppercase tracking-wider">
-                  {isSpeakingQuestion ? 'AI Interviewer Speaking...' : 
+                  {isSpeakingQuestion ? 'Interviewer Speaking...' : 
                    silenceCountdown !== null ? `Silence detected... Submitting in ${silenceCountdown}s...` :
                    isRecording ? 'Interviewer Listening (Speak freely)...' : 
-                   isSubmitting ? 'Evaluating answer with AI...' : 
+                   isSubmitting ? 'Evaluating answer...' : 
                    'Ready'}
                 </p>
 
@@ -563,7 +548,6 @@ export const MockInterviewRoom: React.FC = () => {
               </div>
             </div>
 
-            {/* Live Speech Recognition Box */}
             <div className="w-full max-w-2xl bg-neutral-50 border border-neutral-200 rounded-xl p-4 text-left space-y-2">
               <div className="flex items-center justify-between text-[11px] font-medium text-neutral-500">
                 <span className="flex items-center">
@@ -588,7 +572,6 @@ export const MockInterviewRoom: React.FC = () => {
               />
             </div>
 
-            {/* Action Controls & Manual Override */}
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
               <button
                 onClick={isRecording ? stopRecordingResources : startRecording}
@@ -620,7 +603,6 @@ export const MockInterviewRoom: React.FC = () => {
 
       </div>
 
-      {/* Slide-out Transcript Drawer */}
       {drawerOpen && (
         <div className="bg-white border border-neutral-200 rounded-2xl p-5 shadow-xs animate-in slide-in-from-bottom duration-150">
           <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
@@ -656,4 +638,3 @@ export const MockInterviewRoom: React.FC = () => {
     </div>
   );
 };
-

@@ -1,22 +1,25 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { CriteriaTask } from '../../types';
+import { CriteriaTask, InterviewAssignment } from '../../types';
 import { 
   Mic, 
   Headphones, 
   FileText, 
   CheckCircle2, 
   Clock, 
-  GitBranch, 
   Code2, 
   Sparkles, 
   ShieldCheck, 
   ArrowUpRight,
+  ArrowRight,
   TrendingUp,
   Award,
   Edit3,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Calendar,
+  Layers,
+  Check
 } from 'lucide-react';
 import { ResumeUploadModal } from './ResumeUploadModal';
 import { SuggestionChatModal } from './SuggestionChatModal';
@@ -24,12 +27,17 @@ import { SuggestionChatModal } from './SuggestionChatModal';
 export const StudentDashboard: React.FC = () => {
   const { 
     student, 
+    currentUser,
     startInterview, 
     toggleCriteriaTask, 
     latestReport, 
     setActiveView,
-    updateCodingHandles
+    updateCodingHandles,
+    assignments,
+    startAssignedSession
   } = useApp();
+
+  const isIndependent = student.isIndependent || currentUser?.isIndependent;
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [suggestionModalOpen, setSuggestionModalOpen] = useState(false);
@@ -43,6 +51,63 @@ export const StudentDashboard: React.FC = () => {
   const completedCriteriaCount = student.criteriaTasks.filter((c: CriteriaTask) => c.isCompleted).length;
   const verifiedCriteriaCount = student.criteriaTasks.filter((c: CriteriaTask) => c.verifiedByMentor).length;
   const progressPercent = Math.round((completedCriteriaCount / (student.criteriaTasks.length || 1)) * 100);
+
+  const relevantAssignments = (assignments || []).filter((asg: InterviewAssignment) => {
+    // If college mismatch, exclude
+    if (asg.collegeId && student.collegeId && asg.collegeId !== student.collegeId) {
+      return false;
+    }
+    if (asg.targetScope === 'ALL_STUDENTS') return true;
+    if (asg.targetScope === 'SPECIFIC_STUDENT') {
+      return asg.targetStudentId === student.id || 
+             asg.targetStudentId === student.rollNumber ||
+             asg.targetStudentId?.toLowerCase() === student.email?.toLowerCase();
+    }
+    if (asg.targetScope === 'MY_MENTEES') {
+      if (student.mentorName && asg.assignedByName && 
+          (student.mentorName.toLowerCase().includes(asg.assignedByName.toLowerCase()) || 
+           asg.assignedByName.toLowerCase().includes(student.mentorName.toLowerCase()))) {
+        return true;
+      }
+      return asg.assignedByRole === 'FACULTY_MENTOR';
+    }
+    if (asg.targetScope === 'PROGRAM') {
+      const progTarget = asg.targetProgramName || asg.targetDomainOrTrack;
+      if (!progTarget) return true;
+      const progMatches = (student.programName && student.programName.toLowerCase().includes(progTarget.toLowerCase())) ||
+        (student.programName && progTarget.toLowerCase().includes(student.programName.toLowerCase())) ||
+        (student.track && (student.track.toLowerCase().includes(progTarget.toLowerCase()) || progTarget.toLowerCase().includes(student.track.toLowerCase())));
+      if (!progMatches) return false;
+      if (asg.targetSubProgram) {
+        return (student.subProgramName && student.subProgramName.toLowerCase() === asg.targetSubProgram.toLowerCase()) ||
+               (student.track && student.track.toLowerCase().includes(asg.targetSubProgram.toLowerCase()));
+      }
+      return true;
+    }
+    if (asg.targetScope === 'DEPARTMENT') {
+      const deptTarget = asg.targetDepartment || asg.targetDomainOrTrack;
+      if (!deptTarget) return true;
+      return (student.department && student.department.toLowerCase().includes(deptTarget.toLowerCase())) ||
+             (deptTarget.toLowerCase().includes(student.department?.toLowerCase() || ''));
+    }
+    // Target domain or track fallback
+    if (asg.targetDomainOrTrack && asg.targetDomainOrTrack !== 'All Batches' && asg.targetDomainOrTrack !== 'ALL') {
+      return (student.track && student.track.toLowerCase().includes(asg.targetDomainOrTrack.toLowerCase())) ||
+             (student.department && student.department.toLowerCase().includes(asg.targetDomainOrTrack.toLowerCase()));
+    }
+    return true;
+  });
+
+  const getStudentSubmission = (asg: InterviewAssignment) => {
+    return asg.submissions?.find(
+      s => s.studentId === student.id ||
+           s.studentRollNumber === student.rollNumber ||
+           s.studentRollNumber?.toLowerCase() === student.rollNumber?.toLowerCase()
+    );
+  };
+
+  const pendingAssignmentsCount = relevantAssignments.filter(a => !getStudentSubmission(a)).length;
+  const completedAssignmentsCount = relevantAssignments.filter(a => !!getStudentSubmission(a)).length;
 
   const handleSaveHandles = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +130,6 @@ export const StudentDashboard: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
       
-      {/* 1. Candidate Hero Header */}
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 sm:p-8 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           
@@ -74,24 +138,37 @@ export const StudentDashboard: React.FC = () => {
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900">
                 {student.name}
               </h1>
-              <span className="px-2.5 py-1 text-xs font-semibold bg-neutral-900 text-white rounded-full">
-                ★ {student.track}
-              </span>
+              {isIndependent ? (
+                <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-950 text-emerald-300 rounded-full border border-emerald-800 flex items-center space-x-1">
+                  <span>★ Independent Candidate</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 text-xs font-semibold bg-neutral-900 text-white rounded-full">
+                  ★ {student.track}
+                </span>
+              )}
               <span className="px-2.5 py-1 text-xs font-medium bg-neutral-100 text-neutral-600 rounded-full border border-neutral-200 font-mono">
                 {student.rollNumber}
               </span>
             </div>
 
             <p className="text-sm text-neutral-500 max-w-2xl">
-              {student.department} · Batch of {student.batchYear} · Primary Track: {student.pepDomain || 'Full Stack'}
+              {student.department} · {isIndependent ? 'Self-Paced Track' : `Batch of ${student.batchYear}`} · Primary Track: {student.subProgramName || student.programName || student.track || 'General'}
             </p>
 
             <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-neutral-500">
-              <div className="flex items-center space-x-1.5">
-                <span className="text-neutral-400 font-normal">Faculty Mentor:</span>
-                <span className="font-medium text-neutral-800">{student.mentorName}</span>
-                {student.mentorEmail && <span className="text-neutral-400">({student.mentorEmail})</span>}
-              </div>
+              {isIndependent ? (
+                <div className="flex items-center space-x-1.5 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="font-medium">Direct Access Mode: Unrestricted AI mock interview, listening lab &amp; proctoring</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-neutral-400 font-normal">Faculty Mentor:</span>
+                  <span className="font-medium text-neutral-800">{student.mentorName}</span>
+                  {student.mentorEmail && <span className="text-neutral-400">({student.mentorEmail})</span>}
+                </div>
+              )}
             </div>
           </div>
 
@@ -101,7 +178,7 @@ export const StudentDashboard: React.FC = () => {
               className="flex items-center space-x-2 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-neutral-800 px-4 py-2.5 rounded-xl text-xs font-medium transition-all shadow-2xs"
             >
               <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span>AI Suggestion Coach</span>
+              <span>Communication Coach</span>
               <span className="w-2 h-2 rounded-full bg-emerald-500 ml-1 animate-pulse"></span>
             </button>
 
@@ -135,7 +212,6 @@ export const StudentDashboard: React.FC = () => {
 
         </div>
 
-        {/* Profiles Stat Strip */}
         <div className="mt-6 pt-6 border-t border-neutral-100 grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/60 relative group">
             <div className="flex items-center justify-between text-neutral-500 text-xs font-medium mb-1">
@@ -217,7 +293,6 @@ export const StudentDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Dynamic Resume & Skills Intake Grounding Section */}
       {!student.resume ? (
         <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-in fade-in">
           <div className="flex items-start space-x-3.5">
@@ -232,7 +307,7 @@ export const StudentDashboard: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-neutral-600 mt-1 max-w-2xl leading-relaxed">
-                Upload your resume (PDF or pasted text) to extract your verified tech stack (Languages, Frameworks, Databases) and projects. The AI Interviewer uses your extracted profile to ask personalized, resume-grounded technical questions.
+                Upload your resume (PDF or pasted text) to extract your verified tech stack (Languages, Frameworks, Databases) and projects. The interview engine uses your extracted profile to ask personalized, resume-grounded technical questions.
               </p>
             </div>
           </div>
@@ -261,7 +336,7 @@ export const StudentDashboard: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Parsed on {student.resume.parsedAt || new Date().toISOString().split('T')[0]} · Grounding enabled for Mock AI Interviews
+                  Parsed on {student.resume.parsedAt || new Date().toISOString().split('T')[0]} · Grounding enabled for Mock Interviews
                 </p>
               </div>
             </div>
@@ -336,7 +411,7 @@ export const StudentDashboard: React.FC = () => {
 
           {student.resume.projects && student.resume.projects.length > 0 && (
             <div className="pt-2">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-2">Parsed Projects Grounded For AI Questions</p>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-semibold mb-2">Parsed Projects Grounded For Technical Questions</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 {student.resume.projects.map((proj: any, idx: number) => (
                   <div key={idx} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60 text-xs space-y-1">
@@ -358,10 +433,155 @@ export const StudentDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 2. Primary Action Cards */}
+      {/* Assigned Sessions & Practice Drills from Faculty & Trainers */}
+      <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 sm:p-7 shadow-xs space-y-5 animate-in fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-neutral-100 pb-4">
+          <div>
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-xl bg-neutral-900 text-white flex items-center justify-center">
+                <Layers className="w-4 h-4" />
+              </div>
+              <h2 className="text-lg font-bold tracking-tight text-neutral-900">
+                Assigned Assessments &amp; Practice Sessions
+              </h2>
+              {pendingAssignmentsCount > 0 ? (
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-900 rounded font-mono uppercase">
+                  {pendingAssignmentsCount} Pending
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-900 rounded font-mono uppercase">
+                  All Up to Date
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-neutral-500 mt-1">
+              Interactive verbal mock interview and listening comprehension assessments assigned by faculty mentors, visiting trainers, and program coordinators.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2 text-xs">
+            <span className="px-2.5 py-1 bg-neutral-100 rounded-lg text-neutral-700 font-mono text-[11px]">
+              {completedAssignmentsCount} / {relevantAssignments.length} Completed
+            </span>
+          </div>
+        </div>
+
+        {relevantAssignments.length === 0 ? (
+          <div className="py-8 text-center text-neutral-400 text-xs">
+            <Layers className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
+            <p className="font-semibold text-neutral-700">No assessments assigned yet.</p>
+            <p className="mt-0.5 text-neutral-500">
+              When mentors, admins, or trainers assign an assessment, it will appear here with your live due date. In the meantime, you can practice freely below.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {relevantAssignments.map((asg) => {
+              const submission = getStudentSubmission(asg);
+              const isCompleted = !!submission;
+              const isInterview = asg.sessionType === 'MOCK_INTERVIEW';
+
+              return (
+                <div 
+                  key={asg.id}
+                  className={`rounded-xl border p-5 flex flex-col justify-between transition-all ${
+                    isCompleted 
+                      ? 'bg-neutral-50/50 border-neutral-200/70 hover:border-neutral-300' 
+                      : 'bg-white border-neutral-300/90 shadow-2xs hover:shadow-xs hover:border-neutral-900/40'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${
+                        isInterview
+                          ? 'bg-neutral-900 text-white'
+                          : 'bg-emerald-900 text-emerald-100'
+                      }`}>
+                        {isInterview ? <Mic className="w-3 h-3 text-emerald-400" /> : <Headphones className="w-3 h-3 text-emerald-300" />}
+                        <span>{isInterview ? 'Technical Mock Interview' : 'Listening Comprehension'}</span>
+                      </span>
+
+                      <div className="flex items-center space-x-1.5">
+                        {asg.isMandatory && (
+                          <span className="px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 rounded">
+                            Mandatory
+                          </span>
+                        )}
+                        {isCompleted ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded font-mono">
+                            <Check className="w-3 h-3" />
+                            <span>Score: {submission.score}/100</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 rounded font-mono">
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            <span>Due {asg.dueDate}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-neutral-900">
+                        {asg.title}
+                      </h3>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">
+                        Assigned by <span className="font-semibold text-neutral-700">{asg.assignedByName}</span> ({asg.assignedByRole.replace(/_/g, ' ')})
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-neutral-50/80 p-2.5 rounded-lg border border-neutral-200/50">
+                      <div>
+                        <span className="text-neutral-400 block text-[10px] uppercase font-mono">Target / Scope</span>
+                        <span className="font-medium text-neutral-800 truncate block">
+                          {asg.targetProgramName || asg.targetDomainOrTrack || asg.targetDepartment || 'Cohort Wide'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-neutral-400 block text-[10px] uppercase font-mono">
+                          {isInterview ? 'Difficulty / Domain' : 'Auditory Passage'}
+                        </span>
+                        <span className="font-medium text-neutral-800 truncate block">
+                          {isInterview ? `${asg.difficulty || 'Medium'} · ${asg.domainOrTopic || 'General'}` : (asg.listeningPassageId || 'FinPay Gateway')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {asg.customInstructions && (
+                      <p className="text-[11px] text-neutral-600 italic bg-amber-50/40 p-2 rounded-lg border border-amber-100/70">
+                        "{asg.customInstructions}"
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-neutral-100 flex items-center justify-between">
+                    <span className="text-[11px] text-neutral-400 font-mono">
+                      {isCompleted ? `Submitted on ${submission.submittedAt ? submission.submittedAt.split('T')[0] : 'Today'}` : 'Not yet attempted'}
+                    </span>
+                    <button
+                      onClick={() => startAssignedSession(asg)}
+                      className={`inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        isCompleted
+                          ? 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800'
+                          : isInterview
+                            ? 'bg-neutral-900 hover:bg-black text-white shadow-xs'
+                            : 'bg-emerald-900 hover:bg-emerald-950 text-white shadow-xs'
+                      }`}
+                    >
+                      {isInterview ? <Mic className="w-3.5 h-3.5" /> : <Headphones className="w-3.5 h-3.5" />}
+                      <span>{isCompleted ? 'Retake Assessment' : (isInterview ? 'Start Mock Assessment' : 'Start Listening Assessment')}</span>
+                      <ArrowRight className="w-3 h-3 ml-0.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        {/* Card A: Voice AI Mock Interview */}
         <div className="relative overflow-hidden bg-neutral-950 text-white rounded-2xl p-7 border border-neutral-800 shadow-sm flex flex-col justify-between group">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -374,7 +594,7 @@ export const StudentDashboard: React.FC = () => {
 
             <div>
               <h2 className="text-xl font-semibold tracking-tight text-white">
-                Attend AI Mock Interview
+                Attend Mock Interview
               </h2>
               <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">
                 Engage in an adaptive verbal technical interview grounded in your uploaded resume projects, concurrency concepts, and algorithmic problem solving.
@@ -410,7 +630,6 @@ export const StudentDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Card B: Listening Comprehension */}
         <div className="relative overflow-hidden bg-white text-neutral-900 rounded-2xl p-7 border border-neutral-200/90 shadow-xs flex flex-col justify-between group hover:border-neutral-300 transition-all">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -461,28 +680,35 @@ export const StudentDashboard: React.FC = () => {
 
       </div>
 
-      {/* 3. Placement Criteria Checklist */}
       <div className="bg-white border border-neutral-200/90 rounded-2xl overflow-hidden shadow-xs">
         <div className="p-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center space-x-2">
               <h3 className="text-base font-semibold tracking-tight text-neutral-900">
-                College Placement Readiness Criteria
+                {isIndependent ? 'Placement Readiness Self-Paced Checklist' : 'College Placement Readiness Criteria'}
               </h3>
               <span className="px-2 py-0.5 text-[11px] font-medium bg-neutral-100 text-neutral-600 rounded-full border border-neutral-200 font-mono">
                 {completedCriteriaCount} of {student.criteriaTasks.length} Completed
               </span>
             </div>
             <p className="text-xs text-neutral-500 mt-1">
-              Checklist items imported from college placement syllabus. Click items to toggle; mentor sign-off requires mentor verification.
+              {isIndependent 
+                ? 'Self-paced placement readiness syllabus. Check off competencies as you master them — no faculty lockouts.' 
+                : 'Checklist items imported from college placement syllabus. Click items to toggle; mentor sign-off requires mentor verification.'}
             </p>
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="text-xs font-medium text-neutral-500">Verified Status:</span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-              <ShieldCheck className="w-3 h-3 mr-1" /> {verifiedCriteriaCount} Signed Off
-            </span>
+            <span className="text-xs font-medium text-neutral-500">Readiness Status:</span>
+            {isIndependent ? (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                <CheckCircle2 className="w-3 h-3 mr-1" /> {completedCriteriaCount} Competencies Completed
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                <ShieldCheck className="w-3 h-3 mr-1" /> {verifiedCriteriaCount} Signed Off
+              </span>
+            )}
           </div>
         </div>
 
@@ -525,6 +751,15 @@ export const StudentDashboard: React.FC = () => {
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/70">
                     <ShieldCheck className="w-3 h-3 mr-1" /> Verified
                   </span>
+                ) : isIndependent ? (
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${
+                    item.isCompleted 
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70' 
+                      : 'bg-neutral-50 text-neutral-500 border-neutral-200/70'
+                  }`}>
+                    {item.isCompleted ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Clock className="w-3 h-3 mr-1" />}
+                    {item.isCompleted ? 'Completed' : 'Self-Paced'}
+                  </span>
                 ) : (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/70">
                     <Clock className="w-3 h-3 mr-1" /> Pending Sign-off
@@ -545,7 +780,6 @@ export const StudentDashboard: React.FC = () => {
         <SuggestionChatModal onClose={() => setSuggestionModalOpen(false)} studentId={student.id} />
       )}
 
-      {/* 4. Link / Edit Coding Handles Modal */}
       {handlesModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
           <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">

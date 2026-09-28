@@ -6,18 +6,11 @@ import {
   FileText, 
   Headphones, 
   ShieldCheck, 
-  GraduationCap, 
   Layers, 
-  UserCheck, 
   ArrowRight, 
   CheckCircle2, 
-  Gauge, 
   MessageSquare, 
-  Radio, 
-  ExternalLink,
-  ChevronRight,
-  Globe,
-  Share2
+  ChevronRight
 } from 'lucide-react';
 
 export const LandingPage: React.FC = () => {
@@ -26,7 +19,6 @@ export const LandingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#FAFAFA] text-neutral-900 flex flex-col antialiased">
       
-      {/* 1. TOP DUMMY SOCIAL MEDIA & BULLETIN BAR */}
       <div className="bg-neutral-950 text-neutral-300 text-xs py-2 px-4 sm:px-8 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center space-x-2.5">
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
@@ -39,7 +31,6 @@ export const LandingPage: React.FC = () => {
           </span>
         </div>
 
-        {/* Dummy Social Media Links */}
         <div className="flex items-center space-x-4 text-neutral-400">
           <span className="text-[11px] text-neutral-500 hidden md:inline">Connect:</span>
           <a 
@@ -87,15 +78,13 @@ export const LandingPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. LANDING NAVBAR */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-neutral-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             
-            {/* Logo */}
             <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-xl bg-neutral-900 text-white flex items-center justify-center font-bold text-sm shadow-xs">
-                R
+              <div className="w-10 h-10 flex items-center justify-center">
+                <img src="/logo.png" alt="PC Logo" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center space-x-2">
@@ -106,15 +95,12 @@ export const LandingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Nav anchors */}
             <nav className="hidden md:flex items-center space-x-6 text-xs font-medium text-neutral-600">
               <a href="#about" className="hover:text-neutral-900 transition-colors">About Platform</a>
-              <a href="#features" className="hover:text-neutral-900 transition-colors">AI Mock Interview</a>
-              <a href="#domains" className="hover:text-neutral-900 transition-colors">21 PEP Domains</a>
-              <a href="#rbac" className="hover:text-neutral-900 transition-colors">Role-Based Access (RBAC)</a>
+              <a href="#features" className="hover:text-neutral-900 transition-colors">Technical Mock Interview</a>
+              <a href="#domains" className="hover:text-neutral-900 transition-colors">Institutional Programs</a>
             </nav>
 
-            {/* Auth CTA Buttons */}
             <div className="flex items-center space-x-2.5">
               <button
                 onClick={() => openAuthModal('login')}
@@ -135,7 +121,6 @@ export const LandingPage: React.FC = () => {
         </div>
       </header>
 
-      {/* 3. HERO SECTION */}
       <section className="relative overflow-hidden pt-12 pb-16 lg:pt-20 lg:pb-24 border-b border-neutral-200/80 bg-gradient-to-b from-white to-neutral-50/50">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center space-y-6">
           
@@ -145,11 +130,11 @@ export const LandingPage: React.FC = () => {
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-neutral-900 leading-tight">
-            AI-Powered Placement Readiness &amp; Communication Platform
+            Placement Readiness &amp; Communication Platform
           </h1>
 
           <p className="max-w-2xl mx-auto text-sm sm:text-base text-neutral-600 leading-relaxed">
-            Elevate campus recruitment outcomes with real-time speech recognition, automated acoustic cadence analysis, Groq AI resume grounding, and institutional governance across 5 stakeholder roles.
+            Elevate campus recruitment outcomes with real-time speech recognition, automated acoustic cadence analysis, resume project grounding, and institutional governance across 5 stakeholder roles.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
@@ -170,7 +155,7 @@ export const LandingPage: React.FC = () => {
           </div>
 
           <div className="pt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-neutral-500 font-mono">
-            <span className="flex items-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 mr-1.5" /> Groq Llama 3.3 / GPT-120B AI</span>
+            <span className="flex items-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 mr-1.5" /> Adaptive Speech &amp; Delivery Evaluation</span>
             <span className="flex items-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 mr-1.5" /> Real Web Speech Recognition</span>
             <span className="flex items-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 mr-1.5" /> PostgreSQL Normalized Schema</span>
             <span className="flex items-center"><CheckCircle2 className="w-4 h-4 text-emerald-600 mr-1.5" /> 5-Tier RBAC Hierarchy</span>
@@ -179,7 +164,6 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 4. RBAC INSTITUTIONAL GOVERNANCE & ROLES */}
       <section id="rbac" className="py-16 px-4 sm:px-6 max-w-7xl mx-auto space-y-8">
         <div className="text-center max-w-2xl mx-auto space-y-2">
           <span className="text-[11px] font-semibold text-neutral-500 font-mono uppercase tracking-wider">
@@ -193,7 +177,6 @@ export const LandingPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Super Admin Root Banner */}
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-3 text-left">
             <span className="text-2xl">👑</span>
@@ -218,7 +201,6 @@ export const LandingPage: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           
-          {/* 1. Super Admin Card */}
           <div className="bg-white border-2 border-amber-300/80 rounded-2xl p-6 space-y-4 hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center text-lg font-bold">
@@ -247,7 +229,6 @@ export const LandingPage: React.FC = () => {
             </button>
           </div>
 
-          {/* 2. Program Admin Card */}
           <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center text-lg font-bold">
@@ -276,7 +257,6 @@ export const LandingPage: React.FC = () => {
             </button>
           </div>
 
-          {/* 3. Faculty Mentor Card */}
           <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center text-lg font-bold">
@@ -305,7 +285,6 @@ export const LandingPage: React.FC = () => {
             </button>
           </div>
 
-          {/* 4. Domain Trainer Card */}
           <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center text-lg font-bold">
@@ -334,7 +313,6 @@ export const LandingPage: React.FC = () => {
             </button>
           </div>
 
-          {/* 5. Student Candidate Card */}
           <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 hover:shadow-md transition-all md:col-span-2 lg:col-span-2">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center text-lg font-bold">
@@ -347,7 +325,7 @@ export const LandingPage: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-neutral-900">Student Candidate Portal</h3>
               <p className="text-xs text-neutral-600 mt-1">
-                Enrolled by Faculty Mentors (College Tracks) or Self-Registered with Email Verification Code (External Track). Resume grounding, speech telemetry, and AI interviews.
+                Enrolled by Faculty Mentors (College Tracks) or Self-Registered with Email Verification Code (External Track). Resume grounding, speech telemetry, and mock interviews.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-neutral-50 border border-neutral-200 rounded-xl p-3 text-xs font-mono">
@@ -374,11 +352,10 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 5. ABOUT THE WEBSITE & CORE ARCHITECTURAL MODULES */}
       <section id="about" className="py-16 px-4 sm:px-6 max-w-7xl mx-auto border-t border-neutral-200/80 space-y-12">
         <div className="text-center max-w-2xl mx-auto space-y-2">
           <span className="text-[11px] font-semibold text-neutral-500 font-mono uppercase tracking-wider">
-            Deep Technical Architecture
+            Technical Architecture
           </span>
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900">
             Engineered for Campus Technical Hiring
@@ -404,9 +381,9 @@ export const LandingPage: React.FC = () => {
             <div className="w-9 h-9 rounded-xl bg-neutral-100 flex items-center justify-center text-neutral-800">
               <FileText className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-semibold text-neutral-900">Groq ATS Resume Grounding</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">Resume Skill &amp; Project Grounding</h3>
             <p className="text-xs text-neutral-600 leading-relaxed">
-              Extracts competencies from candidate PDF or text resumes into categorized skills and project archetypes. Ephemeral RAG synthesizes follow-up questions tied to their verified projects.
+              Extracts competencies from candidate PDF or text resumes into categorized skills and project archetypes. Synthesizes follow-up questions tied directly to verified projects.
             </p>
           </div>
 
@@ -424,9 +401,9 @@ export const LandingPage: React.FC = () => {
             <div className="w-9 h-9 rounded-xl bg-neutral-100 flex items-center justify-center text-neutral-800">
               <MessageSquare className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-semibold text-neutral-900">Two-Agent AI Suggestion Coach</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">Communication &amp; Interview Coach</h3>
             <p className="text-xs text-neutral-600 leading-relaxed">
-              Agent 1 provides conversational coaching guidance while Agent 2 generates structured terminology replacement cards (before vs after phrasing) and S-T-A-R structural advice.
+              Provides conversational interview guidance alongside structured terminology replacement cards (before vs after phrasing) and S-T-A-R structural advice.
             </p>
           </div>
 
@@ -444,22 +421,21 @@ export const LandingPage: React.FC = () => {
             <div className="w-9 h-9 rounded-xl bg-neutral-100 flex items-center justify-center text-neutral-800">
               <Layers className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-semibold text-neutral-900">21 Specialized PEP Domains</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">Custom Institutional Programs</h3>
             <p className="text-xs text-neutral-600 leading-relaxed">
-              Pre-configured domain rubrics spanning Full Stack, DevOps, AI/ML, Cyber Security, Embedded Systems, FinTech, VLSI, Robotics, and Cloud Architecture.
+              Tailored domain rubrics configured dynamically by college administrators spanning Full Stack, DevOps, AI/ML, Cyber Security, Embedded Systems, FinTech, VLSI, Robotics, and Cloud Architecture.
             </p>
           </div>
 
         </div>
       </section>
 
-      {/* 6. FOOTER */}
       <footer className="mt-auto border-t border-neutral-200 bg-white py-12 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-neutral-500">
           
           <div className="flex items-center space-x-3">
-            <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs">
-              R
+            <div className="w-8 h-8 flex items-center justify-center">
+              <img src="/logo.png" alt="PC Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <p className="font-semibold text-neutral-900">College Placement &amp; Training Ecosystem</p>

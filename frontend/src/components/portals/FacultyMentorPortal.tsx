@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
-import { PEP_DOMAINS } from '../../data/mockData';
 import { StudentHistoryModal } from '../common/StudentHistoryModal';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal';
+import { AssignSessionModal } from '../common/AssignSessionModal';
+import type { DynamicProgram, InterviewAssignment } from '../../types';
 import { 
   GraduationCap, 
   Search, 
@@ -14,43 +15,61 @@ import {
   AlertCircle, 
   Eye, 
   Trash2, 
-  X 
+  X,
+  Plus,
+  Mic,
+  Headphones,
+  Layers,
+  Clock,
+  ArrowRight
 } from 'lucide-react';
 
 export const FacultyMentorPortal: React.FC = () => {
-  const { currentUser, verifyCriteriaTask } = useApp();
+  const { currentUser, verifyCriteriaTask, assignments } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [mentees, setMentees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [signedOffMap, setSignedOffMap] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // Inspector & Delete Modals
   const [inspectStudentId, setInspectStudentId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; role: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  // Student Creation Modal State
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'MENTEES' | 'DRILLS'>('MENTEES');
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [targetStudentForAssign, setTargetStudentForAssign] = useState<any | null>(null);
   const [stuName, setStuName] = useState('');
   const [stuEmail, setStuEmail] = useState('');
   const [stuRollNumber, setStuRollNumber] = useState('');
   const [stuDepartment, setStuDepartment] = useState('Computer Science & Engineering');
   const [stuBatchYear, setStuBatchYear] = useState(2026);
-  const [stuTrack, setStuTrack] = useState<'HOPE_ELITE' | 'HOPE_NON_ELITE' | 'PEP' | 'DEPARTMENT'>('HOPE_ELITE');
-  const [stuDomain, setStuDomain] = useState('Full Stack Web Architecture');
+  const [programs, setPrograms] = useState<DynamicProgram[]>([]);
+  const [selectedProgId, setSelectedProgId] = useState<string>('GENERAL');
+  const [selectedSubProgram, setSelectedSubProgram] = useState<string>('');
   const [stuPassword, setStuPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const fetchMentees = async () => {
     try {
       setLoading(true);
-      const list = await api.admin.getMentorMentees();
+      const [list, progs] = await Promise.all([
+        api.admin.getMentorMentees(),
+        api.college.getPrograms(currentUser?.collegeId || 'col-1')
+      ]);
       if (list) {
         setMentees(list);
       }
+      if (progs) {
+        setPrograms(progs);
+        if (progs.length > 0 && selectedProgId === 'GENERAL') {
+          setSelectedProgId(progs[0].id);
+          if (progs[0].hasSubPrograms && progs[0].subPrograms?.length > 0) {
+            setSelectedSubProgram(progs[0].subPrograms[0]);
+          }
+        }
+      }
     } catch (err: any) {
-      console.warn('Error loading mentees:', err);
+      console.warn('Error loading mentees or programs:', err);
     } finally {
       setLoading(false);
     }
@@ -70,17 +89,26 @@ export const FacultyMentorPortal: React.FC = () => {
     setSubmitting(true);
     setFeedback(null);
     try {
+      const activeProg = programs.find(p => p.id === selectedProgId);
+      const progName = activeProg ? activeProg.name : 'General Track';
+      const trackName = activeProg && activeProg.hasSubPrograms && selectedSubProgram
+        ? `${activeProg.name} (${selectedSubProgram})`
+        : progName;
+
       await api.admin.createStudentByMentor({
         name: stuName.trim(),
         email: stuEmail.trim(),
         rollNumber: stuRollNumber.trim(),
         department: stuDepartment,
         batchYear: Number(stuBatchYear),
-        track: stuTrack,
-        domainName: stuTrack === 'PEP' ? stuDomain : undefined,
+        track: trackName,
+        programId: activeProg?.id,
+        programName: activeProg?.name,
+        subProgramName: activeProg?.hasSubPrograms ? selectedSubProgram : undefined,
+        domain: selectedSubProgram || activeProg?.name || stuDepartment,
         password: stuPassword.trim() || 'student123'
       });
-      setFeedback({ type: 'success', message: `Student '${stuName}' enrolled in ${stuTrack} successfully!` });
+      setFeedback({ type: 'success', message: `Student '${stuName}' enrolled in ${trackName} successfully!` });
       setStuName('');
       setStuEmail('');
       setStuRollNumber('');
@@ -99,7 +127,6 @@ export const FacultyMentorPortal: React.FC = () => {
     try {
       await verifyCriteriaTask('crit-3');
     } catch {
-      // Handled
     }
   };
 
@@ -118,6 +145,14 @@ export const FacultyMentorPortal: React.FC = () => {
     }
   };
 
+  const mentorAssignments = (assignments || []).filter((a: InterviewAssignment) => {
+    if (a.assignedByRole === 'FACULTY_MENTOR') return true;
+    if (a.targetScope === 'MY_MENTEES') return true;
+    if (currentUser?.name && a.assignedByName && a.assignedByName.toLowerCase().includes(currentUser.name.toLowerCase())) return true;
+    if (currentUser?.email && a.assignedById && a.assignedById.toLowerCase() === currentUser.email.toLowerCase()) return true;
+    return false;
+  });
+
   const filteredMentees = mentees.filter(s => 
     s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.rollNumber?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -126,7 +161,6 @@ export const FacultyMentorPortal: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
       
-      {/* Mentor Profile Header */}
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2.5">
@@ -143,22 +177,31 @@ export const FacultyMentorPortal: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-neutral-500 mt-0.5">
-                {currentUser?.email} · Assigned Mentee Roster ({mentees.length} Students)
+                {currentUser?.email} · Assigned Mentee Roster ({mentees.length} Students) · {mentorAssignments.length} Drills Dispatched
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center space-x-3 text-xs">
-          <div className="px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-700">
-            <span className="font-semibold text-neutral-900">{mentees.length}</span> Assigned Mentees
-          </div>
+          <button 
+            type="button"
+            onClick={() => { 
+              setTargetStudentForAssign(null);
+              setAssignModalOpen(true); 
+              setFeedback(null); 
+            }}
+            className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Assign Assessment</span>
+          </button>
           <button 
             onClick={() => { setCreateModalOpen(true); setFeedback(null); }}
             className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-3.5 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs cursor-pointer"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            <span>Create Student Account</span>
+            <span>Enroll Student</span>
           </button>
         </div>
       </div>
@@ -181,110 +224,277 @@ export const FacultyMentorPortal: React.FC = () => {
         </div>
       )}
 
-      {/* Mentees Table */}
-      <div className="bg-white border border-neutral-200/90 rounded-2xl overflow-hidden shadow-xs">
-        <div className="p-4 sm:px-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="relative w-full sm:w-80">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="Search mentee by name or roll number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-9 pr-3 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-900 transition-colors"
-            />
-          </div>
+      {/* View Tabs */}
+      <div className="flex items-center space-x-2 border-b border-neutral-200 pb-3 text-xs">
+        <button
+          onClick={() => setActiveTab('MENTEES')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-medium transition-all cursor-pointer ${
+            activeTab === 'MENTEES'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600'
+          }`}
+        >
+          <GraduationCap className="w-3.5 h-3.5" />
+          <span>My Assigned Mentees ({mentees.length})</span>
+        </button>
 
-          <span className="text-xs text-neutral-500">
-            You only see students assigned directly under your mentorship
-          </span>
-        </div>
-
-        {mentees.length === 0 ? (
-          <div className="text-center py-12 text-neutral-400 text-xs">
-            <GraduationCap className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
-            <p className="font-semibold text-neutral-700 text-sm">No mentees assigned yet.</p>
-            <p className="mt-1 max-w-sm mx-auto text-neutral-500">
-              Click "Create Student Account" above to enroll your first student, or wait for Program Admin to assign cohort students.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
-                <tr>
-                  <th className="py-3 px-6 font-medium">MENTEE</th>
-                  <th className="py-3 px-6 font-medium">COHORT TRACK</th>
-                  <th className="py-3 px-6 font-medium">DOMAIN</th>
-                  <th className="py-3 px-6 font-medium">LATEST MOCK</th>
-                  <th className="py-3 px-6 font-medium">CHECKLIST</th>
-                  <th className="py-3 px-6 font-medium text-right">MENTOR ACTION</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredMentees.map((s) => {
-                  const isSigned = signedOffMap[s.id];
-                  return (
-                    <tr key={s.id} className="hover:bg-neutral-50/70 transition-colors">
-                      <td className="py-3.5 px-6 font-medium text-neutral-900">
-                        <div>{s.name}</div>
-                        <div className="text-[10px] text-neutral-400 font-mono">{s.rollNumber}</div>
-                      </td>
-                      <td className="py-3.5 px-6">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800 border border-neutral-200">
-                          {s.track}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-6 text-neutral-600">
-                        {s.domain || 'Department General'}
-                      </td>
-                      <td className="py-3.5 px-6">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-semibold text-[11px] bg-neutral-900 text-white">
-                          {s.score ? `${s.score}%` : 'Not Taken'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-6 font-mono text-neutral-700">
-                        {isSigned ? 'Verified' : s.checklist || '0/5 Verified'}
-                      </td>
-                      <td className="py-3.5 px-6 text-right space-x-2">
-                        <button
-                          onClick={() => setInspectStudentId(s.id)}
-                          className="inline-flex items-center space-x-1 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                          title="View Interview History & Turns"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>History</span>
-                        </button>
-                        {isSigned ? (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <Check className="w-3 h-3 mr-1" /> Verified
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleSignOff(s.id)}
-                            className="bg-neutral-900 hover:bg-black text-white px-2.5 py-1 rounded-lg text-xs font-medium transition-colors shadow-2xs cursor-pointer"
-                          >
-                            Sign Off
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setDeleteTarget({ id: s.userId || s.id, name: s.name, role: 'STUDENT' })}
-                          className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-medium transition-colors cursor-pointer inline-flex items-center"
-                          title="Remove Mentee"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <button
+          onClick={() => setActiveTab('DRILLS')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-medium transition-all cursor-pointer ${
+            activeTab === 'DRILLS'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Assigned Drills &amp; Submissions ({mentorAssignments.length})</span>
+        </button>
       </div>
 
-      {/* Modal: Create Student Account */}
+      {activeTab === 'MENTEES' && (
+        <div className="bg-white border border-neutral-200/90 rounded-2xl overflow-hidden shadow-xs">
+          <div className="p-4 sm:px-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search mentee by name or roll number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-9 pr-3 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-900 transition-colors"
+              />
+            </div>
+
+            <span className="text-xs text-neutral-500">
+              You only see students assigned directly under your mentorship
+            </span>
+          </div>
+
+          {mentees.length === 0 ? (
+            <div className="text-center py-12 text-neutral-400 text-xs">
+              <GraduationCap className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
+              <p className="font-semibold text-neutral-700 text-sm">No mentees assigned yet.</p>
+              <p className="mt-1 max-w-sm mx-auto text-neutral-500">
+                Click "Enroll Student" above to enroll your first student, or wait for Program Admin to assign cohort students.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
+                  <tr>
+                    <th className="py-3 px-6 font-medium">MENTEE</th>
+                    <th className="py-3 px-6 font-medium">COHORT TRACK</th>
+                    <th className="py-3 px-6 font-medium">DOMAIN</th>
+                    <th className="py-3 px-6 font-medium">LATEST MOCK</th>
+                    <th className="py-3 px-6 font-medium">CHECKLIST</th>
+                    <th className="py-3 px-6 font-medium text-right">MENTOR ACTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {filteredMentees.map((s) => {
+                    const isSigned = signedOffMap[s.id];
+                    return (
+                      <tr key={s.id} className="hover:bg-neutral-50/70 transition-colors">
+                        <td className="py-3.5 px-6 font-medium text-neutral-900">
+                          <div>{s.name}</div>
+                          <div className="text-[10px] text-neutral-400 font-mono">{s.rollNumber}</div>
+                        </td>
+                        <td className="py-3.5 px-6">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800 border border-neutral-200">
+                            {s.track}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-6 text-neutral-600">
+                          {s.domain || 'Department General'}
+                        </td>
+                        <td className="py-3.5 px-6">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-semibold text-[11px] bg-neutral-900 text-white">
+                            {s.score ? `${s.score}%` : 'Not Taken'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-6 font-mono text-neutral-700">
+                          {isSigned ? 'Verified' : s.checklist || '0/5 Verified'}
+                        </td>
+                        <td className="py-3.5 px-6 text-right space-x-2">
+                          <button
+                            onClick={() => {
+                              setTargetStudentForAssign(s);
+                              setAssignModalOpen(true);
+                            }}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                            title="Assign verbal mock or listening drill directly to this mentee"
+                          >
+                            <Plus className="w-3 h-3 text-emerald-600" />
+                            <span>Assign Assessment</span>
+                          </button>
+                          <button
+                            onClick={() => setInspectStudentId(s.id)}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                            title="View Interview History & Turns"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>History</span>
+                          </button>
+                          {isSigned ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <Check className="w-3 h-3 mr-1" /> Verified
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleSignOff(s.id)}
+                              className="bg-neutral-900 hover:bg-black text-white px-2.5 py-1 rounded-lg text-xs font-medium transition-colors shadow-2xs cursor-pointer"
+                            >
+                              Sign Off
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setDeleteTarget({ id: s.userId || s.id, name: s.name, role: 'STUDENT' })}
+                            className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-medium transition-colors cursor-pointer inline-flex items-center"
+                            title="Remove Mentee"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'DRILLS' && (
+        <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-neutral-100 pb-4">
+            <div>
+              <h3 className="text-base font-semibold text-neutral-900">
+                Assigned Practice Drills &amp; Mentee Submissions
+              </h3>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Track candidate submissions, auditory listening scores, and mock interview speech rubrics across your assigned mentees.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setTargetStudentForAssign(null);
+                setAssignModalOpen(true);
+              }}
+              className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-3.5 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Assign Assessment</span>
+            </button>
+          </div>
+
+          {mentorAssignments.length === 0 ? (
+            <div className="text-center py-12 text-neutral-400 text-xs">
+              <Layers className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
+              <p className="font-semibold text-neutral-700 text-sm">No drills dispatched yet.</p>
+              <p className="mt-1 max-w-sm mx-auto text-neutral-500">
+                Click "Dispatch New Drill" above to assign an interactive voice mock interview or listening lab to your mentees.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {mentorAssignments.map((asg) => {
+                const isInterview = asg.sessionType === 'MOCK_INTERVIEW';
+                const submissions = asg.submissions || [];
+                return (
+                  <div key={asg.id} className="border border-neutral-200/90 rounded-xl p-5 bg-neutral-50/50 hover:bg-neutral-50 transition-all space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                            isInterview
+                              ? 'bg-neutral-900 text-white'
+                              : 'bg-emerald-900 text-emerald-100'
+                          }`}>
+                            {isInterview ? <Mic className="w-3 h-3 text-emerald-400" /> : <Headphones className="w-3 h-3 text-emerald-300" />}
+                            <span>{isInterview ? 'Technical Mock Interview' : 'Listening Comprehension Lab'}</span>
+                          </span>
+
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-200/80 text-neutral-800 font-mono">
+                            {asg.targetScope.replace(/_/g, ' ')}
+                          </span>
+
+                          {asg.isMandatory ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800">
+                              Mandatory
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-600">
+                              Optional Practice
+                            </span>
+                          )}
+                        </div>
+
+                        <h4 className="text-sm font-bold text-neutral-900">{asg.title}</h4>
+                        <p className="text-xs text-neutral-500">
+                          Due: <span className="font-mono text-neutral-800">{asg.dueDate}</span>
+                          {asg.domainOrTopic && <span> · Topic: <span className="font-semibold text-neutral-700">{asg.domainOrTopic}</span></span>}
+                          {asg.difficulty && <span> · Difficulty: <span className="font-semibold text-neutral-700">{asg.difficulty}</span></span>}
+                          {asg.listeningPassageId && <span> · Audio Passage: <span className="font-semibold text-neutral-700">{asg.listeningPassageId}</span></span>}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-neutral-900 block">
+                            {submissions.length} / {mentees.length}
+                          </span>
+                          <span className="text-[10px] text-neutral-400 font-mono">Submissions</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Submissions breakdown */}
+                    {submissions.length > 0 ? (
+                      <div className="bg-white rounded-lg border border-neutral-200/80 overflow-hidden">
+                        <div className="px-3.5 py-2 bg-neutral-100/60 border-b border-neutral-200/60 flex items-center justify-between text-[11px] font-medium text-neutral-600">
+                          <span>Mentee Submissions &amp; Scores</span>
+                          <span className="font-mono">{submissions.length} completed</span>
+                        </div>
+                        <div className="divide-y divide-neutral-100 text-xs">
+                          {submissions.map((sub, sIdx) => (
+                            <div key={sIdx} className="px-3.5 py-2.5 flex items-center justify-between">
+                              <div className="flex items-center space-x-2.5">
+                                <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold">
+                                  ✓
+                                </span>
+                                <div>
+                                  <span className="font-semibold text-neutral-900">{sub.studentName}</span>
+                                  <span className="text-[10px] text-neutral-400 font-mono ml-2">({sub.studentRollNumber})</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center space-x-3">
+                                <span className="text-[11px] text-neutral-400 font-mono">
+                                  {sub.submittedAt ? sub.submittedAt.split('T')[0] : 'Completed'}
+                                </span>
+                                <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[11px] bg-neutral-900 text-white">
+                                  {sub.score}/100
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-neutral-400 italic bg-white p-2.5 rounded-lg border border-neutral-200/60">
+                        No mentee submissions yet. Mentees will see this session marked as pending on their dashboard.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {createModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
           <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-lg p-6 shadow-xl animate-in zoom-in-95 duration-150 space-y-4">
@@ -368,29 +578,44 @@ export const FacultyMentorPortal: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-medium text-neutral-700 mb-1">Placement Cohort Track *</label>
-                <select
-                  value={stuTrack}
-                  onChange={(e) => setStuTrack(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:outline-none focus:border-neutral-900"
-                >
-                  <option value="HOPE_ELITE">★ HOPE Elite (Top Competitive Coders)</option>
-                  <option value="HOPE_NON_ELITE">HOPE Non-Elite (Standard Coding Accelerator)</option>
-                  <option value="PEP">PEP (Specialized Domain Tracks)</option>
-                  <option value="DEPARTMENT">Department General Stream</option>
-                </select>
-              </div>
-
-              {stuTrack === 'PEP' && (
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">PEP Specialized Domain</label>
+                <label className="block font-medium text-neutral-700 mb-1">Institutional Program *</label>
+                {programs.length === 0 ? (
+                  <div className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                    No custom programs defined by Super Admin. Candidate will be assigned to General Track.
+                  </div>
+                ) : (
                   <select
-                    value={stuDomain}
-                    onChange={(e) => setStuDomain(e.target.value)}
+                    value={selectedProgId}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSelectedProgId(newId);
+                      const p = programs.find(pr => pr.id === newId);
+                      if (p?.hasSubPrograms && p.subPrograms.length > 0) {
+                        setSelectedSubProgram(p.subPrograms[0]);
+                      } else {
+                        setSelectedSubProgram('');
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:outline-none focus:border-neutral-900"
                   >
-                    {PEP_DOMAINS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                    {programs.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                    <option value="GENERAL">General Stream</option>
+                  </select>
+                )}
+              </div>
+
+              {programs.find(p => p.id === selectedProgId)?.hasSubPrograms && (
+                <div>
+                  <label className="block font-medium text-neutral-700 mb-1">Sub-Program / Track Tier</label>
+                  <select
+                    value={selectedSubProgram}
+                    onChange={(e) => setSelectedSubProgram(e.target.value)}
+                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:outline-none focus:border-neutral-900"
+                  >
+                    {programs.find(p => p.id === selectedProgId)?.subPrograms.map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
                     ))}
                   </select>
                 </div>
@@ -428,7 +653,6 @@ export const FacultyMentorPortal: React.FC = () => {
         </div>
       )}
 
-      {/* STUDENT FULL HISTORY INSPECTOR MODAL */}
       {inspectStudentId && (
         <StudentHistoryModal
           studentIdOrUserId={inspectStudentId}
@@ -436,7 +660,6 @@ export const FacultyMentorPortal: React.FC = () => {
         />
       )}
 
-      {/* DELETE CONFIRMATION MODAL */}
       {deleteTarget && (
         <DeleteConfirmModal
           title="Remove Mentee"
@@ -445,6 +668,28 @@ export const FacultyMentorPortal: React.FC = () => {
           isDeleting={isDeleting}
           onConfirm={handleConfirmDelete}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {assignModalOpen && (
+        <AssignSessionModal
+          isOpen={assignModalOpen}
+          onClose={() => {
+            setAssignModalOpen(false);
+            setTargetStudentForAssign(null);
+          }}
+          onSuccess={(newAsg) => {
+            setFeedback({
+              type: 'success',
+              message: `Drill '${newAsg.title}' assigned successfully to your mentees!`
+            });
+            setAssignModalOpen(false);
+            setTargetStudentForAssign(null);
+          }}
+          defaultRole="FACULTY_MENTOR"
+          defaultTargetScope={targetStudentForAssign ? 'SPECIFIC_STUDENT' : 'MY_MENTEES'}
+          menteesList={mentees}
+          studentsList={mentees}
         />
       )}
 

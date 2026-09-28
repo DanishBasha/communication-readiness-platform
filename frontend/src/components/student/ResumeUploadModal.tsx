@@ -74,7 +74,6 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
       <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
         
-        {/* Header */}
         <div className="p-5 border-b border-neutral-200 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2.5">
             <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center text-neutral-800">
@@ -82,7 +81,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
             </div>
             <div>
               <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Student Resume Intake & Grounding</h3>
-              <p className="text-xs text-neutral-500">Groq AI extracts your technical stack to personalize mock interview questions</p>
+              <p className="text-xs text-neutral-500">Extracts your technical stack to personalize mock interview questions</p>
             </div>
           </div>
           <button 
@@ -93,7 +92,6 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
           </button>
         </div>
 
-        {/* Tab switcher */}
         <div className="flex border-b border-neutral-200 px-6 pt-3 bg-neutral-50/50 shrink-0">
           <button
             onClick={() => setActiveTab('upload')}
@@ -118,7 +116,6 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
           </button>
         </div>
 
-        {/* Modal Body */}
         <div className="p-6 space-y-5 overflow-y-auto">
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2">
@@ -129,7 +126,6 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
 
           {activeTab === 'upload' ? (
             <div className="space-y-4">
-              {/* Input mode toggle: File vs Paste */}
               <div className="flex items-center space-x-2 bg-neutral-100 p-1 rounded-lg w-fit">
                 <button
                   type="button"
@@ -186,7 +182,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
                     {isProcessing && (
                       <div className="mt-4 flex items-center justify-center space-x-2 text-xs text-neutral-800 font-medium bg-neutral-100 py-2 px-3 rounded-lg w-fit mx-auto">
                         <Sparkles className="w-4 h-4 animate-spin text-neutral-900" />
-                        <span>Extracting skills & projects with Groq AI...</span>
+                        <span>Extracting skills & projects...</span>
                       </div>
                     )}
                   </div>
@@ -209,7 +205,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
                     {isProcessing ? (
                       <>
                         <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                        <span>Parsing Resume with Groq AI...</span>
+                        <span>Parsing Resume...</span>
                       </>
                     ) : (
                       <>
@@ -248,7 +244,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
               {student.resume?.summary && (
                 <div>
                   <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wider mb-1.5 font-mono">
-                    Candidate AI Profile Summary
+                    Candidate Technical Profile Summary
                   </p>
                   <div className="bg-neutral-50 border border-neutral-200/80 rounded-xl p-3 text-xs text-neutral-700 leading-relaxed">
                     {student.resume.summary}
@@ -344,11 +340,10 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
           )}
         </div>
 
-        {/* Footer */}
         <div className="p-4 border-t border-neutral-200 bg-neutral-50/50 flex items-center justify-between shrink-0">
           <span className="text-[11px] text-neutral-500 font-medium flex items-center">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mr-1.5" /> 
-            {student.resume ? 'Resume Linked to AI Interview Engine' : 'Select a file to begin'}
+            {student.resume ? 'Resume Linked to Interview Engine' : 'Select a file to begin'}
           </span>
           <div className="flex items-center space-x-2">
             {activeTab === 'extracted' && (
@@ -373,4 +368,3 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
     </div>
   );
 };
-
