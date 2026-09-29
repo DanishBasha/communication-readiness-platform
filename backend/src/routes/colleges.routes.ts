@@ -85,6 +85,31 @@ collegesRouter.get('/', authenticate, requireRole('PLATFORM_OWNER'), async (_req
   }
 });
 
+// ── GET /api/colleges/stats/overview ─────────────────────────────────────────
+// IMPORTANT: must be registered BEFORE /:id so Express doesn't match "stats" as an id.
+
+collegesRouter.get('/stats/overview', authenticate, requireRole('PLATFORM_OWNER'), async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const { rows } = await db.query<{
+      total_colleges: string;
+      active_super_admins: string;
+    }>(
+      `SELECT
+         COUNT(DISTINCT i.id)::text AS total_colleges,
+         COUNT(DISTINCT inv.accepted_by_user_id)::text AS active_super_admins
+       FROM org.institutions i
+       LEFT JOIN identity.invites inv
+         ON inv.institution_id = i.id AND inv.role = 'SUPER_ADMIN' AND inv.status = 'ACCEPTED'`
+    );
+    sendSuccess(res, {
+      totalColleges: parseInt(rows[0].total_colleges, 10),
+      activeSuperAdmins: parseInt(rows[0].active_super_admins, 10),
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 // ── POST /api/colleges ────────────────────────────────────────────────────────
 
 const createCollegeSchema = z.object({
@@ -139,7 +164,7 @@ collegesRouter.get('/:id/programs', authenticate, requireRole('PLATFORM_OWNER', 
       is_active: boolean; created_at: string;
       sub_programs: { id: string; name: string; code: string }[];
     }>(
-      `SELECT p.id, p.name, p.code, p.institution_id, p.is_active, p.created_at,
+      `SELECT p.id, p.name, p.code, p.institution_id, p.created_at,
          COALESCE(
            json_agg(json_build_object('id', sp.id, 'name', sp.name, 'code', sp.code))
              FILTER (WHERE sp.id IS NOT NULL),
@@ -147,7 +172,7 @@ collegesRouter.get('/:id/programs', authenticate, requireRole('PLATFORM_OWNER', 
          ) AS sub_programs
        FROM org.programs p
        LEFT JOIN org.sub_programs sp ON sp.program_id = p.id AND sp.is_active = true
-       WHERE p.institution_id = $1 AND p.is_active = true
+       WHERE p.institution_id = $1
        GROUP BY p.id
        ORDER BY p.name`,
       [req.params.id]
@@ -276,31 +301,6 @@ collegesRouter.post('/:id/invite-program-admin', authenticate, requireRole('PLAT
       },
       inviteUrl: `/?invite_token=${invite.token}`,
     }, 201);
-  } catch (err) {
-    sendError(res, err);
-  }
-});
-
-// ── GET /api/colleges/overview-stats ─────────────────────────────────────────
-// Must be registered BEFORE /:id to avoid matching "overview-stats" as an id.
-
-collegesRouter.get('/stats/overview', authenticate, requireRole('PLATFORM_OWNER'), async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const { rows } = await db.query<{
-      total_colleges: string;
-      active_super_admins: string;
-    }>(
-      `SELECT
-         COUNT(DISTINCT i.id)::text AS total_colleges,
-         COUNT(DISTINCT inv.accepted_by_user_id)::text AS active_super_admins
-       FROM org.institutions i
-       LEFT JOIN identity.invites inv
-         ON inv.institution_id = i.id AND inv.role = 'SUPER_ADMIN' AND inv.status = 'ACCEPTED'`
-    );
-    sendSuccess(res, {
-      totalColleges: parseInt(rows[0].total_colleges, 10),
-      activeSuperAdmins: parseInt(rows[0].active_super_admins, 10),
-    });
   } catch (err) {
     sendError(res, err);
   }

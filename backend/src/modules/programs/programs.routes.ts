@@ -192,7 +192,7 @@ const createProgramSchema = z.object({
 programsRouter.post(
   '/',
   authenticate,
-  requireRole('PROGRAM_ADMIN'),
+  requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = createProgramSchema.safeParse(req.body);
@@ -228,7 +228,7 @@ const updateProgramSchema = z.object({
 programsRouter.put(
   '/:id',
   authenticate,
-  requireRole('PROGRAM_ADMIN'),
+  requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -265,7 +265,7 @@ programsRouter.put(
 programsRouter.delete(
   '/:id',
   authenticate,
-  requireRole('PROGRAM_ADMIN'),
+  requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -306,7 +306,7 @@ const createSubProgramSchema = z.object({
 programsRouter.post(
   '/:programId/sub-programs',
   authenticate,
-  requireRole('PROGRAM_ADMIN'),
+  requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { programId } = req.params;
@@ -351,7 +351,7 @@ const updateSubProgramSchema = z.object({
 programsRouter.put(
   '/:programId/sub-programs/:subId',
   authenticate,
-  requireRole('PROGRAM_ADMIN'),
+  requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { programId, subId } = req.params;
@@ -385,7 +385,7 @@ programsRouter.put(
 programsRouter.delete(
   '/:programId/sub-programs/:subId',
   authenticate,
-  requireRole('PROGRAM_ADMIN'),
+  requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { programId, subId } = req.params;

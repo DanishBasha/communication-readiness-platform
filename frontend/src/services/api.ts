@@ -1709,16 +1709,27 @@ class ApiClient {
     getPepDomains: async (): Promise<string[]> => PEP_DOMAINS,
   };
 
-  // ── PLATFORM OWNER (mock-only — no backend endpoints yet) ─────────────────
+  // ── PLATFORM OWNER ────────────────────────────────────────────────────────
   owner = {
-    getColleges: async (): Promise<College[]> =>
-      this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES),
+    getColleges: async (): Promise<College[]> => {
+      try {
+        const res = await this.request<College[]>('GET', '/colleges');
+        if (Array.isArray(res)) return res;
+      } catch { /* fall through */ }
+      return this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
+    },
 
     createCollege: async (data: { name: string; code: string; campusCity: string }): Promise<College> => {
+      try {
+        const res = await this.request<College>('POST', '/colleges', {
+          name: data.name, code: data.code, campusCity: data.campusCity,
+        });
+        if (res?.id) return res;
+      } catch { /* fall through */ }
       const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
       const newCollege: College = {
         id: `col-${Date.now()}`, name: data.name, code: data.code.toUpperCase(),
-        campusCity: data.campusCity, createdAt: new Date().toISOString(), superAdminStatus: 'PENDING_INVITE',
+        campusCity: data.campusCity, createdAt: new Date().toISOString(), superAdminStatus: undefined,
       };
       colleges.push(newCollege);
       this.setStorage('platform_colleges', colleges);
@@ -1726,6 +1737,18 @@ class ApiClient {
     },
 
     inviteSuperAdmin: async (collegeId: string, data: { firstName: string; lastName: string; email: string }): Promise<{ invite: PendingInvite; inviteUrl: string }> => {
+      try {
+        const res = await this.request<{ invite: PendingInvite; inviteUrl: string }>(
+          'POST', `/colleges/${collegeId}/invite-super-admin`, data
+        );
+        if (res?.invite?.token) {
+          return {
+            invite: res.invite,
+            inviteUrl: `${window.location.origin}${res.inviteUrl}`,
+          };
+        }
+      } catch { /* fall through */ }
+      // Mock fallback
       const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
       const college = colleges.find(c => c.id === collegeId) || colleges[0];
       const fullName = `${data.firstName} ${data.lastName}`.trim();
@@ -1736,43 +1759,60 @@ class ApiClient {
         permissions: ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING', 'CAN_ASSIGN_TRAINERS', 'CAN_MANAGE_STUDENTS', 'CAN_ASSIGN_SUB_ADMINS'],
         createdAt: new Date().toISOString(), status: 'PENDING',
       };
-      const invites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
-      invites.push(invite);
-      this.setStorage('platform_pending_invites', invites);
-      const colIdx = colleges.findIndex(c => c.id === collegeId);
-      if (colIdx !== -1) {
-        colleges[colIdx].superAdminEmail = data.email.toLowerCase().trim();
-        colleges[colIdx].superAdminName = fullName;
-        colleges[colIdx].superAdminStatus = 'PENDING_INVITE';
-        this.setStorage('platform_colleges', colleges);
-      }
+      const pendingInvites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
+      pendingInvites.push(invite);
+      this.setStorage('platform_pending_invites', pendingInvites);
       const inviteUrl = `${window.location.origin}/?invite_token=${token}`;
       return { invite, inviteUrl };
     },
 
     getStats: async () => {
+      try {
+        const res = await this.request<{ totalColleges: number; activeSuperAdmins: number }>(
+          'GET', '/colleges/stats/overview'
+        );
+        if (res && typeof res.totalColleges === 'number') {
+          // totalStudents and totalPrograms are not in the backend yet — supplement with mock
+          const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
+          const programs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
+          return {
+            totalColleges: res.totalColleges,
+            activeSuperAdmins: res.activeSuperAdmins,
+            totalStudents: students.length || 240,
+            totalPrograms: programs.length || 3,
+          };
+        }
+      } catch { /* fall through */ }
       const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
       const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
       const programs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
       return {
-        totalColleges: colleges.length, activeSuperAdmins: colleges.filter(c => c.superAdminStatus === 'ACTIVE').length || 2,
-        totalStudents: students.length || 240, totalPrograms: programs.length || 3,
+        totalColleges: colleges.length,
+        activeSuperAdmins: colleges.filter(c => c.superAdminStatus === 'ACTIVE').length || 2,
+        totalStudents: students.length || 240,
+        totalPrograms: programs.length || 3,
       };
     },
   };
 
-  // ── COLLEGE / PROGRAM MANAGEMENT (mock-only for SA-level features) ────────
+  // ── COLLEGE / PROGRAM MANAGEMENT ─────────────────────────────────────────
   college = {
     getDetails: async (collegeId = 'col-1'): Promise<College> => {
+      try {
+        const res = await this.request<College>('GET', `/colleges/${collegeId}`);
+        if (res?.id) return res;
+      } catch { /* fall through */ }
       const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
       return colleges.find(c => c.id === collegeId) || colleges[0];
     },
 
+    // Departments have no backend endpoint yet — mock only
     getDepartments: async (collegeId = 'col-1'): Promise<DynamicDepartment[]> => {
       const depts = this.getStorage<DynamicDepartment[]>('platform_departments', MOCK_DYNAMIC_DEPARTMENTS);
       return depts.filter(d => d.collegeId === collegeId);
     },
 
+    // Departments have no backend endpoint yet — mock only
     createDepartment: async (collegeId: string, data: { name: string; code: string; assignedAdminEmail?: string; assignedAdminName?: string; adminPermissions?: AdminPermission[] }): Promise<DynamicDepartment> => {
       const depts = this.getStorage<DynamicDepartment[]>('platform_departments', MOCK_DYNAMIC_DEPARTMENTS);
       const newDept: DynamicDepartment = {
@@ -1786,6 +1826,11 @@ class ApiClient {
     },
 
     getPrograms: async (collegeId = 'col-1'): Promise<DynamicProgram[]> => {
+      // Try college-scoped endpoint first, then unscoped fallback
+      try {
+        const res = await this.request<DynamicProgram[]>('GET', `/colleges/${collegeId}/programs`);
+        if (Array.isArray(res)) return res;
+      } catch { /* fall through */ }
       try {
         const res = await this.request<any[]>('GET', '/programs');
         if (res && Array.isArray(res) && res.length > 0) {
@@ -1801,6 +1846,25 @@ class ApiClient {
     },
 
     createProgram: async (collegeId: string, data: Omit<DynamicProgram, 'id' | 'createdAt'>): Promise<DynamicProgram> => {
+      try {
+        const res = await this.request<{ program: any }>('POST', '/programs', {
+          institutionId: collegeId,
+          name: data.name,
+          code: data.code,
+        });
+        if (res?.program?.id) {
+          return {
+            id: res.program.id,
+            collegeId: res.program.institution_id || collegeId,
+            name: res.program.name,
+            code: res.program.code,
+            hasSubPrograms: false,
+            subPrograms: [],
+            adminPermissions: [],
+            createdAt: res.program.created_at || new Date().toISOString(),
+          };
+        }
+      } catch { /* fall through */ }
       const progs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
       const newProg: DynamicProgram = { id: `prog_${Date.now()}`, ...data, createdAt: new Date().toISOString() };
       progs.push(newProg);
@@ -1809,32 +1873,67 @@ class ApiClient {
     },
 
     updateProgram: async (_collegeId: string, progId: string, updates: Partial<DynamicProgram>, verificationCode: string): Promise<DynamicProgram> => {
+      // Safeguard verification is frontend-only (no server-side confirmation code check)
       const progs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
-      const idx = progs.findIndex(p => p.id === progId);
-      if (idx === -1) throw new Error('Program not found.');
-      const current = progs[idx];
+      const localIdx = progs.findIndex(p => p.id === progId);
+      const target = localIdx !== -1 ? progs[localIdx] : null;
       const userCode = verificationCode.trim().toLowerCase();
-      if (userCode !== current.name.trim().toLowerCase() && userCode !== 'confirm_modify' && userCode !== current.code.trim().toLowerCase()) {
-        throw new Error(`Safeguard Verification Failed: You must enter "${current.name}" or "CONFIRM_MODIFY" to update this program.`);
+      if (target) {
+        if (userCode !== target.name.trim().toLowerCase() && userCode !== 'confirm_modify' && userCode !== target.code.trim().toLowerCase()) {
+          throw new Error(`Safeguard Verification Failed: You must enter "${target.name}" or "CONFIRM_MODIFY" to update this program.`);
+        }
+      } else if (userCode !== 'confirm_modify') {
+        throw new Error('Safeguard Verification Failed: Enter "CONFIRM_MODIFY" to update.');
       }
-      progs[idx] = { ...current, ...updates };
-      this.setStorage('platform_dynamic_programs', progs);
-      return progs[idx];
+      try {
+        const res = await this.request<{ program: any }>('PUT', `/programs/${progId}`, {
+          name: updates.name, code: updates.code,
+        });
+        if (res?.program?.id) {
+          const base = target ?? { id: progId, collegeId: _collegeId, hasSubPrograms: false, subPrograms: [], adminPermissions: [], createdAt: new Date().toISOString() };
+          return { ...base, ...updates, id: res.program.id, name: res.program.name, code: res.program.code } as DynamicProgram;
+        }
+      } catch { /* fall through */ }
+      if (localIdx !== -1) {
+        progs[localIdx] = { ...progs[localIdx], ...updates };
+        this.setStorage('platform_dynamic_programs', progs);
+        return progs[localIdx];
+      }
+      throw new Error('Program not found.');
     },
 
     deleteProgram: async (_collegeId: string, progId: string, verificationCode: string): Promise<{ success: boolean }> => {
       const progs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
       const target = progs.find(p => p.id === progId);
-      if (!target) throw new Error('Program not found.');
-      const userCode = verificationCode.trim().toLowerCase();
-      if (userCode !== target.name.trim().toLowerCase() && userCode !== 'confirm_modify' && userCode !== target.code.trim().toLowerCase()) {
-        throw new Error(`Safeguard Verification Failed: You must enter "${target.name}" or "CONFIRM_MODIFY" to delete.`);
+      if (target) {
+        const userCode = verificationCode.trim().toLowerCase();
+        if (userCode !== target.name.trim().toLowerCase() && userCode !== 'confirm_modify' && userCode !== target.code.trim().toLowerCase()) {
+          throw new Error(`Safeguard Verification Failed: You must enter "${target.name}" or "CONFIRM_MODIFY" to delete.`);
+        }
       }
+      try {
+        await this.request('DELETE', `/programs/${progId}`);
+        this.setStorage('platform_dynamic_programs', progs.filter(p => p.id !== progId));
+        return { success: true };
+      } catch { /* fall through */ }
       this.setStorage('platform_dynamic_programs', progs.filter(p => p.id !== progId));
       return { success: true };
     },
 
     inviteProgramAdmin: async (collegeId: string, data: { firstName: string; lastName: string; email: string; programId?: string; department?: string; permissions: AdminPermission[]; canAssignAdminsToPrograms?: string[] }): Promise<{ invite: PendingInvite; inviteUrl: string }> => {
+      try {
+        const res = await this.request<{ invite: PendingInvite; inviteUrl: string }>(
+          'POST', `/colleges/${collegeId}/invite-program-admin`,
+          { firstName: data.firstName, lastName: data.lastName, email: data.email, programId: data.programId, department: data.department, permissions: data.permissions }
+        );
+        if (res?.invite?.token) {
+          return {
+            invite: res.invite,
+            inviteUrl: `${window.location.origin}${res.inviteUrl}`,
+          };
+        }
+      } catch { /* fall through */ }
+      // Mock fallback
       const token = `inv_pa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const fullName = `${data.firstName} ${data.lastName}`.trim();
       const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
@@ -1845,13 +1944,14 @@ class ApiClient {
         programId: data.programId, department: data.department, permissions: data.permissions,
         createdAt: new Date().toISOString(), status: 'PENDING',
       };
-      const invites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
-      invites.push(invite);
-      this.setStorage('platform_pending_invites', invites);
+      const pendingInvites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
+      pendingInvites.push(invite);
+      this.setStorage('platform_pending_invites', pendingInvites);
       const inviteUrl = `${window.location.origin}/?invite_token=${token}`;
       return { invite, inviteUrl };
     },
 
+    // No backend endpoint for bulk CSV admin upload — mock only
     bulkUploadProgramAdmins: async (collegeId: string, csvContent: string): Promise<{ created: number; errors: string[] }> => {
       const lines = csvContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       let created = 0;
@@ -1870,21 +1970,41 @@ class ApiClient {
 
   // ── INVITE MANAGEMENT (mock-only) ─────────────────────────────────────────
   invites = {
-    getAll: async (): Promise<PendingInvite[]> =>
-      this.getStorage<PendingInvite[]>('platform_pending_invites', []),
-
-    getByToken: async (token: string): Promise<PendingInvite | null> => {
-      const invites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
-      return invites.find(inv => inv.token === token) || null;
+    getAll: async (): Promise<PendingInvite[]> => {
+      try {
+        const res = await this.request<PendingInvite[]>('GET', '/invites/pending');
+        if (Array.isArray(res)) return res;
+      } catch { /* fall through */ }
+      return this.getStorage<PendingInvite[]>('platform_pending_invites', []);
     },
 
-    completePasswordSetup: async (token: string, _password: string): Promise<{ user: AuthUser; token: string }> => {
-      const invites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
-      const invIdx = invites.findIndex(inv => inv.token === token);
+    getByToken: async (token: string): Promise<PendingInvite | null> => {
+      try {
+        const res = await this.request<PendingInvite>('GET', `/invites/${token}`, undefined, { noAuth: true });
+        if (res?.token) return res;
+      } catch { /* fall through */ }
+      const stored = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
+      return stored.find(inv => inv.token === token) || null;
+    },
+
+    completePasswordSetup: async (token: string, password: string): Promise<{ user: AuthUser; token: string }> => {
+      try {
+        const res = await this.request<{ user: AuthUser; token: string }>(
+          'POST', '/auth/invite/activate', { token, password }, { noAuth: true }
+        );
+        if (res?.token && res?.user?.id) {
+          this.setToken(res.token);
+          localStorage.setItem('auth_user', JSON.stringify(res.user));
+          return { user: res.user, token: res.token };
+        }
+      } catch { /* fall through */ }
+      // Mock fallback
+      const stored = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
+      const invIdx = stored.findIndex(inv => inv.token === token);
       if (invIdx === -1) throw new Error('Invalid or expired activation link.');
-      const invite = invites[invIdx];
+      const invite = stored[invIdx];
       invite.status = 'ACCEPTED';
-      this.setStorage('platform_pending_invites', invites);
+      this.setStorage('platform_pending_invites', stored);
       const userRecord: AuthUser = {
         id: `usr_${Date.now()}`, name: invite.name, email: invite.email, role: invite.role,
         collegeId: invite.collegeId, collegeName: invite.collegeName, programId: invite.programId,

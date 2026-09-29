@@ -144,6 +144,27 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       studentId = sRows[0]?.id ?? null;
     }
 
+    // For SUPER_ADMIN / PROGRAM_ADMIN, look up their institution via accepted invite
+    let collegeId: string | null = null;
+    let collegeName: string | null = null;
+    let programId: string | null = null;
+    if (user.role === 'SUPER_ADMIN' || user.role === 'PROGRAM_ADMIN') {
+      const { rows: invRows } = await db.query<{
+        institution_id: string | null; program_id: string | null; inst_name: string | null;
+      }>(
+        `SELECT inv.institution_id, inv.program_id, i.name AS inst_name
+         FROM identity.invites inv
+         LEFT JOIN org.institutions i ON i.id = inv.institution_id
+         WHERE inv.accepted_by_user_id = $1 LIMIT 1`,
+        [user.id]
+      );
+      if (invRows.length > 0) {
+        collegeId = invRows[0].institution_id;
+        collegeName = invRows[0].inst_name;
+        programId = invRows[0].program_id;
+      }
+    }
+
     const authUser: AuthUser = {
       id: user.id, email: user.email, role: user.role,
       name: user.name, tokenVersion: user.token_version,
@@ -152,7 +173,12 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
 
     sendSuccess(res, {
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user.id, name: user.name, email: user.email, role: user.role,
+        ...(collegeId && { collegeId }),
+        ...(collegeName && { collegeName }),
+        ...(programId && { programId }),
+      },
       studentId,
     });
   } catch (err) {
@@ -194,9 +220,15 @@ authRouter.post('/invite/activate', async (req: Request, res: Response): Promise
     const { rows: inviteRows } = await client.query<{
       id: string; email: string; name: string; role: UserRole;
       status: string; expires_at: string; institution_id: string | null;
+      program_id: string | null; department: string | null; permissions: string[];
+      inst_name: string | null;
     }>(
-      `SELECT id, email, name, role, status, expires_at, institution_id
-       FROM identity.invites WHERE token = $1`,
+      `SELECT inv.id, inv.email, inv.name, inv.role, inv.status, inv.expires_at,
+              inv.institution_id, inv.program_id, inv.department, inv.permissions,
+              i.name AS inst_name
+       FROM identity.invites inv
+       LEFT JOIN org.institutions i ON i.id = inv.institution_id
+       WHERE inv.token = $1`,
       [token]
     );
 
@@ -240,7 +272,14 @@ authRouter.post('/invite/activate', async (req: Request, res: Response): Promise
 
       sendSuccess(res, {
         token: jwtToken,
-        user: { id: userId, name: invite.name, email: invite.email, role: invite.role },
+        user: {
+          id: userId, name: invite.name, email: invite.email, role: invite.role,
+          ...(invite.institution_id && { collegeId: invite.institution_id }),
+          ...(invite.inst_name && { collegeName: invite.inst_name }),
+          ...(invite.program_id && { programId: invite.program_id }),
+          ...(invite.department && { department: invite.department }),
+          permissions: invite.permissions ?? [],
+        },
       }, 201);
     } catch (innerErr) {
       await client.query('ROLLBACK');
@@ -262,15 +301,43 @@ authRouter.post('/invite/activate', async (req: Request, res: Response): Promise
 
 authRouter.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const user = req.user!;
+
     let studentId: string | null = null;
-    if (req.user!.role === 'STUDENT') {
+    if (user.role === 'STUDENT') {
       const { rows } = await db.query<{ id: string }>(
-        'SELECT id FROM org.students WHERE user_id = $1', [req.user!.id]
+        'SELECT id FROM org.students WHERE user_id = $1', [user.id]
       );
       studentId = rows[0]?.id ?? null;
     }
+
+    let collegeId: string | null = null;
+    let collegeName: string | null = null;
+    let programId: string | null = null;
+    if (user.role === 'SUPER_ADMIN' || user.role === 'PROGRAM_ADMIN') {
+      const { rows: invRows } = await db.query<{
+        institution_id: string | null; program_id: string | null; inst_name: string | null;
+      }>(
+        `SELECT inv.institution_id, inv.program_id, i.name AS inst_name
+         FROM identity.invites inv
+         LEFT JOIN org.institutions i ON i.id = inv.institution_id
+         WHERE inv.accepted_by_user_id = $1 LIMIT 1`,
+        [user.id]
+      );
+      if (invRows.length > 0) {
+        collegeId = invRows[0].institution_id;
+        collegeName = invRows[0].inst_name;
+        programId = invRows[0].program_id;
+      }
+    }
+
     sendSuccess(res, {
-      user: { id: req.user!.id, name: req.user!.name, email: req.user!.email, role: req.user!.role },
+      user: {
+        id: user.id, name: user.name, email: user.email, role: user.role,
+        ...(collegeId && { collegeId }),
+        ...(collegeName && { collegeName }),
+        ...(programId && { programId }),
+      },
       studentId,
     });
   } catch (err) {
