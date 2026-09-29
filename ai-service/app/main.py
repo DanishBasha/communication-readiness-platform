@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers.interview import router as interview_router
+from app.routers.embedding import router as embedding_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -10,14 +11,19 @@ app = FastAPI(
     debug=settings.debug,
 )
 
+# CORS: allow configured origins (comma-separated) or fall back to dev defaults
+_raw_origins = settings.cors_origins or "http://localhost:5173,http://localhost:5000"
+_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5000"],
+    allow_origins=_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(interview_router)
+app.include_router(embedding_router)
 
 
 @app.get("/health")

@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  # ── Backend (Node.js Express) ───────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      AI_SERVICE_URL: http://ai-service:8000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      UPLOAD_DIR: uploads
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_MODEL: ${VLLM_MODEL:-local-model}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+    volumes:
+      - backend_uploads:/app/uploads
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+
+  # ── AI Service (Python FastAPI) ─────────────────────────────────────────────
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_MODEL: ${VLLM_MODEL:-local-model}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me}
+      CORS_ORIGINS: ${CORS_ORIGIN:-http://localhost}
+    restart: unless-stopped
+
+  # ── Frontend (React + nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - ai-service
+    restart: unless-stopped
+
+  # ── Redis (optional — session context cache) ────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  backend_uploads:
+  redis_data:

@@ -17,6 +17,14 @@ const schema = z.object({
   MAX_QUESTIONS_PER_SESSION: z.coerce.number().int().min(1).default(5),
   // Redis for session context cache (TTL: 2 hours per session)
   REDIS_URL: z.string().default('redis://localhost:6379'),
+  // vLLM / LLM generation settings (used by knowledge service and future RAG prompts)
+  VLLM_BASE_URL: z.string().default(''),
+  VLLM_MODEL: z.string().default('local-model'),
+  VLLM_TIMEOUT_MS: z.coerce.number().default(30000),
+  // Knowledge / RAG settings
+  KNOWLEDGE_CHUNK_SIZE: z.coerce.number().default(2000),
+  KNOWLEDGE_CHUNK_OVERLAP: z.coerce.number().default(200),
+  EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
 });
 
 export const env = schema.parse(process.env);

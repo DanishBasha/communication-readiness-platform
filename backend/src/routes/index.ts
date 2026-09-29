@@ -57,6 +57,10 @@ router.use('/responses', responsesRouter);
 router.use('/reports', reportsRouter);
 router.use('/question-bank', questionBankRouter);
 
+// Module 3 — Knowledge / RAG
+import { knowledgeRouter } from '../modules/knowledge/knowledge.routes';
+router.use('/knowledge', knowledgeRouter);
+
 // Module 4 — Credits, Checklist, Verifications, Placement Eligibility
 import { creditsRouter } from '../modules/credits/credits.routes';
 import { creditPoliciesRouter } from '../modules/credits/credit-policies.routes';
