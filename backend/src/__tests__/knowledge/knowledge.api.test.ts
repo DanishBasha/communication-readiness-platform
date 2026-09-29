@@ -155,6 +155,27 @@ describe('GET /api/knowledge/documents/:id', () => {
   });
 });
 
+describe('GET /api/knowledge/documents/:id/chunks', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns chunk list for a document', async () => {
+    mockGetChunksForDocument.mockResolvedValueOnce([
+      { id: 'c1', document_id: 'doc-uuid-1', chunk_index: 0, chunk_text: 'chunk A', embedding_model: 'text-embedding-3-small', source_metadata: null, created_at: '2026-01-01T00:00:00Z' },
+    ]);
+    const res = await supertest(app).get('/api/knowledge/documents/doc-uuid-1/chunks');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].chunk_index).toBe(0);
+  });
+
+  it('returns empty array when document has no chunks', async () => {
+    mockGetChunksForDocument.mockResolvedValueOnce([]);
+    const res = await supertest(app).get('/api/knowledge/documents/doc-uuid-1/chunks');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+});
+
 describe('DELETE /api/knowledge/documents/:id', () => {
   beforeEach(() => vi.clearAllMocks());
 

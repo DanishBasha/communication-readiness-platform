@@ -20,6 +20,10 @@ services:
       UPLOAD_DIR: uploads
       VLLM_BASE_URL: ${VLLM_BASE_URL:-}
       VLLM_MODEL: ${VLLM_MODEL:-local-model}
+      VLLM_TIMEOUT_MS: ${VLLM_TIMEOUT_MS:-30000}
+      RAG_CHUNK_SIZE: ${RAG_CHUNK_SIZE:-2000}
+      RAG_CHUNK_OVERLAP: ${RAG_CHUNK_OVERLAP:-200}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
     volumes:
       - backend_uploads:/app/uploads

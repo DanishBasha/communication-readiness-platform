@@ -4,10 +4,14 @@ import { buildContext } from './context.builder';
 import {
   insertDocument,
   insertChunksBatch,
+  deleteDocument,
   searchSimilarChunks,
   type SearchResult,
   type KnowledgeDocument,
 } from './knowledge.repository';
+
+// Must match knowledge.knowledge_chunks vector(1536) — do not change without a migration
+const EXPECTED_EMBEDDING_DIM = 1536;
 
 // ── Text chunker ──────────────────────────────────────────────────────────────
 
@@ -16,6 +20,9 @@ export function chunkText(
   chunkSize = env.RAG_CHUNK_SIZE,
   chunkOverlap = env.RAG_CHUNK_OVERLAP
 ): string[] {
+  if (chunkOverlap >= chunkSize) {
+    throw new Error(`chunkOverlap (${chunkOverlap}) must be less than chunkSize (${chunkSize})`);
+  }
   const cleaned = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   if (cleaned.length <= chunkSize) return cleaned.length > 0 ? [cleaned] : [];
 
@@ -74,20 +81,34 @@ export async function ingestDocument(opts: IngestOptions): Promise<{
     metadata: opts.metadata,
   });
 
-  const chunkTexts = chunkText(opts.text);
-  const embeddings = await getEmbeddingClient().embedBatch(chunkTexts);
+  try {
+    const chunkTexts = chunkText(opts.text);
+    const embeddings = await getEmbeddingClient().embedBatch(chunkTexts);
 
-  await insertChunksBatch(
-    chunkTexts.map((t, i) => ({
-      document_id: document.id,
-      chunk_index: i,
-      chunk_text: t,
-      embedding: embeddings[i],
-      embedding_model: env.EMBEDDING_MODEL,
-    }))
-  );
+    if (embeddings.length > 0 && embeddings[0].length !== EXPECTED_EMBEDDING_DIM) {
+      throw new Error(
+        `Embedding dimension mismatch: model returned ${embeddings[0].length} dims ` +
+        `but the database expects ${EXPECTED_EMBEDDING_DIM}. ` +
+        `Verify EMBEDDING_MODEL is compatible with vector(${EXPECTED_EMBEDDING_DIM}).`
+      );
+    }
 
-  return { document, chunks_created: chunkTexts.length };
+    await insertChunksBatch(
+      chunkTexts.map((t, i) => ({
+        document_id: document.id,
+        chunk_index: i,
+        chunk_text: t,
+        embedding: embeddings[i],
+        embedding_model: env.EMBEDDING_MODEL,
+      }))
+    );
+
+    return { document, chunks_created: chunkTexts.length };
+  } catch (err) {
+    // Best-effort cleanup: remove the orphaned document record if embedding/insert fails
+    await deleteDocument(document.id).catch(() => {});
+    throw err;
+  }
 }
 
 // ── Re-embed existing document ────────────────────────────────────────────────

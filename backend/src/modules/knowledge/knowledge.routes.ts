@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { authenticate, AuthRequest } from '../../middleware/authenticate';
@@ -99,13 +99,21 @@ knowledgeRouter.post(
   '/documents/upload',
   authenticate,
   requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER'),
-  upload.single('file'),
+  (req: Request, res: Response, next: NextFunction) => {
+    upload.single('file')(req, res, (err) => {
+      if (err) {
+        sendError(res, new AppError(400, err instanceof Error ? err.message : 'Upload failed', 'UPLOAD_ERROR'));
+        return;
+      }
+      next();
+    });
+  },
   async (req: AuthRequest, res: Response): Promise<void> => {
     if (!req.file) {
       sendError(res, new AppError(400, 'No file uploaded', 'MISSING_FILE'));
       return;
     }
-    const title = String(req.body.title || req.file.originalname.replace(/\.txt$/, ''));
+    const title = String(req.body.title || req.file.originalname.replace(/\.txt$/, '')).slice(0, 255);
     const text = req.file.buffer.toString('utf8');
     if (!text.trim()) {
       sendError(res, new AppError(400, 'Uploaded file is empty', 'EMPTY_FILE'));

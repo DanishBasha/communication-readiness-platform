@@ -18,6 +18,7 @@ const schema = z.object({
   // Redis for session context cache (TTL: 2 hours per session)
   REDIS_URL: z.string().default('redis://localhost:6379'),
   // vLLM / LLM generation settings (used by knowledge service and future RAG prompts)
+  // VLLM_BASE_URL must include the /v1 path: e.g. http://host:8000/v1
   VLLM_BASE_URL: z.string().default(''),
   VLLM_MODEL: z.string().default('local-model'),
   VLLM_TIMEOUT_MS: z.coerce.number().default(30000),

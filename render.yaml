@@ -23,6 +23,14 @@ services:
         sync: false
       - key: VLLM_MODEL
         value: local-model
+      - key: VLLM_TIMEOUT_MS
+        value: "30000"
+      - key: RAG_CHUNK_SIZE
+        value: "2000"
+      - key: RAG_CHUNK_OVERLAP
+        value: "200"
+      - key: RAG_TOP_K
+        value: "5"
       - key: EMBEDDING_MODEL
         value: text-embedding-3-small
     healthCheckPath: /api/health

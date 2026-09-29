@@ -72,6 +72,13 @@ describe('searchSimilarChunks()', () => {
     expect(sql).toContain('institution_id');
     expect(params).toContain('inst-uuid');
   });
+
+  it('includes ORDER BY in the query', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    await searchSimilarChunks(ZERO_VEC, 5);
+    const [sql] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('ORDER BY');
+  });
 });
 
 describe('semanticSearch()', () => {

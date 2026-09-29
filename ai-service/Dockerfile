@@ -13,6 +13,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Non-root user for security
+RUN useradd -r -s /bin/false appuser && chown -R appuser /app
+USER appuser
+
 EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 

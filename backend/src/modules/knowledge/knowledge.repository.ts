@@ -130,36 +130,55 @@ export async function deleteDocument(id: string): Promise<boolean> {
 
 // ── Chunks ────────────────────────────────────────────────────────────────────
 
+// Maximum chunks per INSERT statement (5 params/chunk × 1000 = 5000, well under PG 65535 limit)
+const MAX_CHUNKS_PER_BATCH = 1000;
+
 export async function insertChunksBatch(chunks: ChunkInsert[]): Promise<void> {
   if (chunks.length === 0) return;
 
-  // Delete existing chunks for this document before re-inserting (idempotent re-embed)
   const documentId = chunks[0].document_id;
-  await db.query(
-    'DELETE FROM knowledge.knowledge_chunks WHERE document_id = $1',
-    [documentId]
-  );
+  const client = await db.connect();
 
-  // Batch insert all chunks in a single round-trip
-  const values: unknown[] = [];
-  const placeholders = chunks.map((c, i) => {
-    const base = i * 5;
-    values.push(
-      c.document_id,
-      c.chunk_index,
-      c.chunk_text,
-      `[${c.embedding.join(',')}]`,  // pgvector literal format
-      c.embedding_model
+  try {
+    await client.query('BEGIN');
+
+    // Delete existing chunks atomically with the new insert (idempotent re-embed)
+    await client.query(
+      'DELETE FROM knowledge.knowledge_chunks WHERE document_id = $1',
+      [documentId]
     );
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector, $${base + 5})`;
-  });
 
-  await db.query(
-    `INSERT INTO knowledge.knowledge_chunks
-       (document_id, chunk_index, chunk_text, embedding, embedding_model)
-     VALUES ${placeholders.join(', ')}`,
-    values
-  );
+    // Insert in pages to stay under PostgreSQL's 65535 bind-parameter limit
+    for (let offset = 0; offset < chunks.length; offset += MAX_CHUNKS_PER_BATCH) {
+      const page = chunks.slice(offset, offset + MAX_CHUNKS_PER_BATCH);
+      const values: unknown[] = [];
+      const placeholders = page.map((c, i) => {
+        const base = i * 5;
+        values.push(
+          c.document_id,
+          c.chunk_index,
+          c.chunk_text,
+          `[${c.embedding.join(',')}]`,
+          c.embedding_model
+        );
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector, $${base + 5})`;
+      });
+
+      await client.query(
+        `INSERT INTO knowledge.knowledge_chunks
+           (document_id, chunk_index, chunk_text, embedding, embedding_model)
+         VALUES ${placeholders.join(', ')}`,
+        values
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getChunksForDocument(documentId: string): Promise<KnowledgeChunk[]> {

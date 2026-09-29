@@ -169,12 +169,12 @@ Response:
 | Variable | Default | Description |
 |---|---|---|
 | `RAG_CHUNK_SIZE` | 2000 | Max characters per chunk |
-| `RAG_CHUNK_OVERLAP` | 200 | Character overlap between chunks |
+| `RAG_CHUNK_OVERLAP` | 200 | Character overlap between chunks (must be < RAG_CHUNK_SIZE) |
 | `RAG_TOP_K` | 5 | Default number of chunks returned by semantic search |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | Model name sent to AI service |
-| `VLLM_BASE_URL` | (empty) | vLLM base URL for generation |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Model name sent to AI service (must output 1536 dims) |
+| `VLLM_BASE_URL` | (empty) | vLLM base URL **including `/v1`**: e.g. `http://host:8000/v1` |
 | `VLLM_MODEL` | `local-model` | vLLM model name |
-| `VLLM_TIMEOUT_MS` | 30000 | HTTP timeout for vLLM/embedding calls |
+| `VLLM_TIMEOUT_MS` | 30000 | HTTP timeout for vLLM/embedding calls (ms) |
 
 ### AI Service (`ai-service/.env`)
 
@@ -193,16 +193,26 @@ The LLM client in `ai-service/app/services/llm_client.py` has a first-class vLLM
 ```python
 # Set in ai-service/.env:
 LLM_PROVIDER=vllm
-LLM_BASE_URL=http://your-vllm-server:8000/v1
+LLM_BASE_URL=http://your-vllm-server:8000/v1   # /v1 suffix is required
 LLM_MODEL=your-model-name
 ```
 
 For embeddings via vLLM (requires vLLM to be started with an embedding model):
 
 ```
-EMBEDDING_BASE_URL=http://your-vllm-server:8000/v1
+EMBEDDING_BASE_URL=http://your-vllm-server:8000/v1   # /v1 suffix required
 EMBEDDING_MODEL=your-embedding-model-name
 ```
+
+The Node.js `VLLMAdapter` (backend) also requires `/v1` in `VLLM_BASE_URL`:
+
+```
+# backend/.env — used for future RAG generation:
+VLLM_BASE_URL=http://your-vllm-server:8000/v1
+VLLM_MODEL=your-model-name
+```
+
+**PENDING TEAM DECISION:** The `createLLMAdapter()` factory is implemented and wired to these env vars, but no RAG endpoint currently calls the LLM. The `semanticSearch()` function returns the context string; the caller is responsible for injecting it into an LLM prompt. The generation endpoint will be added once the team finalizes the module workflow.
 
 The embedding client (`ai-service/app/services/embedding_client.py`) uses the OpenAI SDK's `client.embeddings.create()` which is compatible with vLLM's OpenAI-compatible API.
 
@@ -226,15 +236,21 @@ Required secrets (never commit):
 
 | Stage | Status |
 |---|---|
-| DB schema (pgvector, IVFFlat index) | Verified — migrations 066–068 |
-| Document ingestion (POST /knowledge/documents) | Implemented — pending live embedding service |
-| Text chunking | Implemented — character-based with boundary detection |
-| Embedding generation | Implemented — requires EMBEDDING_BASE_URL or LLM_API_KEY |
-| Vector storage | Implemented — pgvector with parameterized batch INSERT |
-| Semantic search | Implemented — cosine similarity `<=>` operator |
-| Top-K retrieval | Implemented — configurable limit (default 5, max 20) |
-| Context construction | Implemented — returned in `context` field |
-| LLM/vLLM abstraction | Implemented — multi-provider adapter, vLLM preset |
-| RAG generation endpoint | Pending — callers inject `context` into their LLM prompts |
+| DB schema (pgvector, IVFFlat index) | IMPLEMENTED — migrations 066–068 |
+| Document ingestion (POST /knowledge/documents) | IMPLEMENTED — unit tested |
+| Text chunking | IMPLEMENTED — 13 unit tests, infinite-loop fix applied |
+| Embedding generation | IMPLEMENTED — requires EMBEDDING_BASE_URL or LLM_API_KEY |
+| Vector storage | IMPLEMENTED — transactional DELETE+INSERT, batch size limit |
+| Semantic search | IMPLEMENTED — cosine similarity `<=>` operator |
+| Top-K retrieval | IMPLEMENTED — configurable limit (default `RAG_TOP_K=5`, max 20) |
+| Context construction | IMPLEMENTED — isolated `buildContext()`, 6 unit tests |
+| LLM/vLLM abstraction | IMPLEMENTED — `LLMAdapter` interface + `VLLMAdapter` + `MockLLMAdapter` |
+| RAG generation endpoint | PENDING TEAM DECISION — `createLLMAdapter()` wired but no route calls it yet |
+| Unit tests (no DB) | IMPLEMENTED — 53 tests across 5 files |
+| Integration tests | ENVIRONMENT BLOCKED — require PostgreSQL on port 5422 |
 
-**Note:** End-to-end testing with a live embedding service is required to validate semantic search quality. With zero vectors (no service configured), ingestion and search routes work but results are not semantically meaningful.
+**Embedding dimension lock:** The database column is `vector(1536)`. `EMBEDDING_MODEL` must be compatible with 1536-dimensional output. Changing to a model with different dimensions (e.g. `text-embedding-3-large` = 3072 dims) requires a DB migration first. A dimension mismatch is caught before the INSERT with a descriptive error.
+
+**IVFFlat index note:** The index is built at migration time on an empty table. Run `REINDEX INDEX idx_knowledge_chunks_embedding` after loading the initial document corpus for full performance.
+
+**Note:** End-to-end testing with a live embedding service is required to validate semantic search quality. With zero vectors (no service configured), ingestion and search routes function but results are not semantically meaningful.

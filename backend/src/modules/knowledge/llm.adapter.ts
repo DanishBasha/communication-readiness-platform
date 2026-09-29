@@ -15,11 +15,17 @@ interface ChatCompletionResponse {
 }
 
 export class VLLMAdapter implements LLMAdapter {
+  private readonly baseUrl: string;
+
   constructor(
-    private readonly baseUrl: string,
+    baseUrl: string,
     private readonly model: string,
     private readonly timeoutMs: number
-  ) {}
+  ) {
+    // Strip trailing slash. VLLM_BASE_URL must include the /v1 path segment
+    // e.g. http://host:8000/v1  → calls http://host:8000/v1/chat/completions
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+  }
 
   async complete(prompt: string, systemPrompt?: string): Promise<string> {
     const messages: ChatMessage[] = [];

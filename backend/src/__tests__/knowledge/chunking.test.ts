@@ -76,4 +76,22 @@ describe('chunkText()', () => {
     const tailOfFirst = chunks[0].slice(-overlap);
     expect(chunks[1]).toContain(tailOfFirst.slice(0, 50));
   });
+
+  it('returns [] for whitespace-only input', () => {
+    expect(chunkText('   ')).toEqual([]);
+    expect(chunkText('\n\n\n')).toEqual([]);
+    expect(chunkText('\t  \r\n  ')).toEqual([]);
+  });
+
+  it('handles zero overlap without looping', () => {
+    const text = 'word '.repeat(500); // ~2500 chars
+    const chunks = chunkText(text, 1000, 0);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.length).toBeLessThan(10);
+  });
+
+  it('throws when chunkOverlap >= chunkSize', () => {
+    expect(() => chunkText('some text', 100, 100)).toThrow('chunkOverlap');
+    expect(() => chunkText('some text', 100, 150)).toThrow('chunkOverlap');
+  });
 });
