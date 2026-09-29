@@ -3,7 +3,9 @@ export type UserRole =
   | 'FACULTY_MENTOR'
   | 'PROGRAM_ADMIN'
   | 'TRAINER'
-  | 'PLACEMENT_COORDINATOR';
+  | 'PLACEMENT_COORDINATOR'
+  | 'SUPER_ADMIN'
+  | 'PLATFORM_OWNER';
 
 export type StudentTrack =
   | 'HOPE_ELITE'

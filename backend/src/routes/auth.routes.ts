@@ -174,6 +174,90 @@ authRouter.post('/logout', authenticate, async (req: AuthRequest, res: Response)
   }
 });
 
+// ── POST /api/auth/invite/activate ────────────────────────────────────────────
+
+const inviteActivateSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+authRouter.post('/invite/activate', async (req: Request, res: Response): Promise<void> => {
+  const parsed = inviteActivateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    sendError(res, new AppError(422, 'Validation failed', 'VALIDATION_ERROR'));
+    return;
+  }
+  const { token, password } = parsed.data;
+
+  const client = await db.connect();
+  try {
+    const { rows: inviteRows } = await client.query<{
+      id: string; email: string; name: string; role: UserRole;
+      status: string; expires_at: string; institution_id: string | null;
+    }>(
+      `SELECT id, email, name, role, status, expires_at, institution_id
+       FROM identity.invites WHERE token = $1`,
+      [token]
+    );
+
+    if (inviteRows.length === 0) {
+      throw new AppError(404, 'Invite not found or already used', 'NOT_FOUND');
+    }
+    const invite = inviteRows[0];
+
+    if (invite.status !== 'PENDING') {
+      throw new AppError(409, 'Invite has already been accepted', 'INVITE_ALREADY_USED');
+    }
+    if (new Date(invite.expires_at) < new Date()) {
+      throw new AppError(410, 'Invite link has expired', 'INVITE_EXPIRED');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await client.query('BEGIN');
+    try {
+      const { rows: userRows } = await client.query<{ id: string }>(
+        `INSERT INTO identity.users (name, email, password_hash, role, token_version, status)
+         VALUES ($1, $2, $3, $4, 0, 'ACTIVE') RETURNING id`,
+        [invite.name, invite.email, passwordHash, invite.role]
+      );
+      const userId = userRows[0].id;
+
+      await client.query(
+        `UPDATE identity.invites
+         SET status = 'ACCEPTED', accepted_by_user_id = $1, accepted_at = now()
+         WHERE id = $2`,
+        [userId, invite.id]
+      );
+
+      await client.query('COMMIT');
+
+      const authUser: AuthUser = {
+        id: userId, email: invite.email, role: invite.role,
+        name: invite.name, tokenVersion: 0,
+      };
+      const jwtToken = signToken(authUser);
+
+      sendSuccess(res, {
+        token: jwtToken,
+        user: { id: userId, name: invite.name, email: invite.email, role: invite.role },
+      }, 201);
+    } catch (innerErr) {
+      await client.query('ROLLBACK');
+      throw innerErr;
+    }
+  } catch (err) {
+    if (err instanceof AppError) { sendError(res, err); return; }
+    if ((err as { code?: string }).code === '23505') {
+      sendError(res, new AppError(409, 'An account with this email already exists', 'DUPLICATE_EMAIL'));
+      return;
+    }
+    sendError(res, err);
+  } finally {
+    client.release();
+  }
+});
+
 // ── GET /api/auth/me ───────────────────────────────────────────────────────────
 
 authRouter.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {

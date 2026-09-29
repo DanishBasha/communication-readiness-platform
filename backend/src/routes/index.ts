@@ -7,6 +7,8 @@ import { orgRouter } from './org.routes';
 import { mentorRouter } from './mentor.routes';
 import { trainerRouter } from './trainer.routes';
 import { adminRouter } from './admin.routes';
+import { collegesRouter } from './colleges.routes';
+import { invitesRouter } from './invites.routes';
 import { authenticate } from '../middleware/authenticate';
 import { programsRouter } from '../modules/programs/programs.routes';
 
@@ -33,6 +35,10 @@ router.use('/org', orgRouter);
 
 // Programs — public GET for dropdowns; protected POST/PUT/DELETE inside the router itself.
 router.use('/programs', programsRouter);
+
+// Colleges + Invites — auth is applied per-route inside each module
+router.use('/colleges', collegesRouter);
+router.use('/invites', invitesRouter);
 
 // Protected — authenticate on every request; individual routes add authorize() as needed
 router.use('/students', authenticate, studentRouter);
