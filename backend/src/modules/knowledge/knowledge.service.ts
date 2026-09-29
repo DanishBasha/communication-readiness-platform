@@ -1,5 +1,6 @@
-import axios from 'axios';
 import { env } from '../../config/env';
+import { getEmbeddingClient } from './embedding.client';
+import { buildContext } from './context.builder';
 import {
   insertDocument,
   insertChunksBatch,
@@ -10,54 +11,38 @@ import {
 
 // ── Text chunker ──────────────────────────────────────────────────────────────
 
-const CHUNK_SIZE = parseInt(process.env.KNOWLEDGE_CHUNK_SIZE ?? '2000', 10);
-const CHUNK_OVERLAP = parseInt(process.env.KNOWLEDGE_CHUNK_OVERLAP ?? '200', 10);
-
-export function chunkText(text: string): string[] {
+export function chunkText(
+  text: string,
+  chunkSize = env.RAG_CHUNK_SIZE,
+  chunkOverlap = env.RAG_CHUNK_OVERLAP
+): string[] {
   const cleaned = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-  if (cleaned.length <= CHUNK_SIZE) return [cleaned];
+  if (cleaned.length <= chunkSize) return cleaned.length > 0 ? [cleaned] : [];
 
   const chunks: string[] = [];
   let start = 0;
 
   while (start < cleaned.length) {
-    let end = start + CHUNK_SIZE;
+    let end = start + chunkSize;
 
-    // Try to end on a sentence or paragraph boundary
     if (end < cleaned.length) {
       const boundary = cleaned.lastIndexOf('\n\n', end);
       const sentence = cleaned.lastIndexOf('. ', end);
       const preferred = Math.max(boundary, sentence);
-      if (preferred > start + CHUNK_OVERLAP) {
+      if (preferred > start + chunkOverlap) {
         end = preferred + 1;
       }
     } else {
       end = cleaned.length;
     }
 
-    chunks.push(cleaned.slice(start, end).trim());
-    start = end - CHUNK_OVERLAP;
-    if (start >= cleaned.length) break;
+    const chunk = cleaned.slice(start, end).trim();
+    if (chunk.length > 0) chunks.push(chunk);
+    if (end >= cleaned.length) break;
+    start = end - chunkOverlap;
   }
 
-  return chunks.filter(c => c.length > 0);
-}
-
-// ── Embedding via AI service ──────────────────────────────────────────────────
-
-async function getEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const url = `${env.AI_SERVICE_URL}/ai/embed-batch`;
-  try {
-    const res = await axios.post<{ embeddings: number[][] }>(
-      url,
-      { texts },
-      { timeout: env.VLLM_TIMEOUT_MS ?? 30000 }
-    );
-    return res.data.embeddings;
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`Embedding service error: ${msg}`);
-  }
+  return chunks;
 }
 
 // ── Document ingestion ────────────────────────────────────────────────────────
@@ -78,7 +63,6 @@ export async function ingestDocument(opts: IngestOptions): Promise<{
   document: KnowledgeDocument;
   chunks_created: number;
 }> {
-  // 1. Insert the document record first
   const document = await insertDocument({
     title: opts.title,
     source_type: opts.source_type,
@@ -90,21 +74,16 @@ export async function ingestDocument(opts: IngestOptions): Promise<{
     metadata: opts.metadata,
   });
 
-  // 2. Chunk the text
   const chunkTexts = chunkText(opts.text);
+  const embeddings = await getEmbeddingClient().embedBatch(chunkTexts);
 
-  // 3. Generate embeddings (batch call to avoid N round-trips)
-  const embeddings = await getEmbeddingsBatch(chunkTexts);
-
-  // 4. Persist chunks with embeddings
-  const embeddingModel = process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small';
   await insertChunksBatch(
-    chunkTexts.map((text, i) => ({
+    chunkTexts.map((t, i) => ({
       document_id: document.id,
       chunk_index: i,
-      chunk_text: text,
+      chunk_text: t,
       embedding: embeddings[i],
-      embedding_model: embeddingModel,
+      embedding_model: env.EMBEDDING_MODEL,
     }))
   );
 
@@ -117,16 +96,15 @@ export async function reembedDocument(
   documentId: string,
   chunkTexts: string[]
 ): Promise<number> {
-  const embeddings = await getEmbeddingsBatch(chunkTexts);
-  const embeddingModel = process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small';
+  const embeddings = await getEmbeddingClient().embedBatch(chunkTexts);
 
   await insertChunksBatch(
-    chunkTexts.map((text, i) => ({
+    chunkTexts.map((t, i) => ({
       document_id: documentId,
       chunk_index: i,
-      chunk_text: text,
+      chunk_text: t,
       embedding: embeddings[i],
-      embedding_model: embeddingModel,
+      embedding_model: env.EMBEDDING_MODEL,
     }))
   );
   return chunkTexts.length;
@@ -136,37 +114,14 @@ export async function reembedDocument(
 
 export async function semanticSearch(
   query: string,
-  limit = 5,
+  limit = env.RAG_TOP_K,
   filter?: { institution_id?: string; program_id?: string }
 ): Promise<{
   results: SearchResult[];
   query: string;
   context: string;
 }> {
-  // Get query embedding from AI service
-  const url = `${env.AI_SERVICE_URL}/ai/embed`;
-  let queryEmbedding: number[];
-
-  try {
-    const res = await axios.post<{ embedding: number[] }>(
-      url,
-      { text: query },
-      { timeout: env.VLLM_TIMEOUT_MS ?? 30000 }
-    );
-    queryEmbedding = res.data.embedding;
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`Embedding service error: ${msg}`);
-  }
-
+  const queryEmbedding = await getEmbeddingClient().embedOne(query);
   const results = await searchSimilarChunks(queryEmbedding, limit, filter);
-
-  // Construct LLM context string from top-K chunks
-  const context = results
-    .map((r, i) =>
-      `[Source ${i + 1}: ${r.document_title}]\n${r.chunk_text}`
-    )
-    .join('\n\n---\n\n');
-
-  return { results, query, context };
+  return { results, query, context: buildContext(results) };
 }

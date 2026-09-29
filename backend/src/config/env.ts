@@ -22,8 +22,9 @@ const schema = z.object({
   VLLM_MODEL: z.string().default('local-model'),
   VLLM_TIMEOUT_MS: z.coerce.number().default(30000),
   // Knowledge / RAG settings
-  KNOWLEDGE_CHUNK_SIZE: z.coerce.number().default(2000),
-  KNOWLEDGE_CHUNK_OVERLAP: z.coerce.number().default(200),
+  RAG_CHUNK_SIZE: z.coerce.number().default(2000),
+  RAG_CHUNK_OVERLAP: z.coerce.number().default(200),
+  RAG_TOP_K: z.coerce.number().default(5),
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
 });
 

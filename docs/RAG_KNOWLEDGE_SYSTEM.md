@@ -168,8 +168,9 @@ Response:
 
 | Variable | Default | Description |
 |---|---|---|
-| `KNOWLEDGE_CHUNK_SIZE` | 2000 | Max characters per chunk |
-| `KNOWLEDGE_CHUNK_OVERLAP` | 200 | Character overlap between chunks |
+| `RAG_CHUNK_SIZE` | 2000 | Max characters per chunk |
+| `RAG_CHUNK_OVERLAP` | 200 | Character overlap between chunks |
+| `RAG_TOP_K` | 5 | Default number of chunks returned by semantic search |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Model name sent to AI service |
 | `VLLM_BASE_URL` | (empty) | vLLM base URL for generation |
 | `VLLM_MODEL` | `local-model` | vLLM model name |
