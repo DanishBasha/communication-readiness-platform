@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import app from './app';
+import http from 'http';
+import app, { attachWebSocket } from './app';
 import { env } from './config/env';
 import { eventBus } from './shared/events/eventBus';
 import { Events, UserRegisteredPayload } from './shared/events/events';
@@ -22,9 +23,13 @@ eventBus.on(Events.USER_REGISTERED, async (payload: UserRegisteredPayload) => {
 // Module 4 — credit accounts, earn-on-attempt, eligibility recalculation
 registerM4EventHandlers();
 
+// Create HTTP server from Express app so WebSocket can share the same port
+const server = http.createServer(app);
+attachWebSocket(server);
 
-const server = app.listen(env.PORT, () => {
+server.listen(env.PORT, () => {
   console.log(`[backend] http://localhost:${env.PORT}  (${env.NODE_ENV})`);
+  console.log(`[backend] ws://localhost:${env.PORT}/interview?sessionId=<id>&token=<jwt>`);
 });
 
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

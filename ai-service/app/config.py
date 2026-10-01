@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     # Shared secret required by POST /ai/config — set to a strong random string in production
     internal_api_key: str = "change-me"
+    # PostgreSQL connection for pgvector turn embeddings (same DB as Node.js backend)
+    database_url: str = ""  # set DATABASE_URL in .env — required for vector store
 
     class Config:
         env_file = ".env"

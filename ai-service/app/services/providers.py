@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Iterator
 
 
 class BaseProvider(ABC):
@@ -15,6 +15,14 @@ class BaseProvider(ABC):
         response_format: dict[str, str] | None = None,
         temperature: float = 0.7,
     ) -> str: ...
+
+    @abstractmethod
+    def chat_complete_stream(
+        self,
+        messages: list[dict[str, str]],
+        response_format: dict[str, str] | None = None,
+        temperature: float = 0.7,
+    ) -> Iterator[str]: ...
 
 
 class OpenAICompatibleProvider(BaseProvider):
@@ -46,6 +54,26 @@ class OpenAICompatibleProvider(BaseProvider):
         resp = self._client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or ""
 
+    def chat_complete_stream(
+        self,
+        messages: list[dict[str, str]],
+        response_format: dict[str, str] | None = None,
+        temperature: float = 0.7,
+    ) -> Iterator[str]:
+        kwargs: dict[str, Any] = dict(
+            model=self._model,
+            messages=messages,
+            temperature=temperature,
+            stream=True,
+        )
+        if response_format:
+            kwargs["response_format"] = response_format
+        stream = self._client.chat.completions.create(**kwargs)
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+
 
 class AnthropicProvider(BaseProvider):
     """Anthropic Claude via the official SDK (different request/response format)."""
@@ -68,6 +96,21 @@ class AnthropicProvider(BaseProvider):
             messages=messages,
         )
         return resp.content[0].text
+
+    def chat_complete_stream(
+        self,
+        messages: list[dict[str, str]],
+        response_format: dict[str, str] | None = None,
+        temperature: float = 0.7,
+    ) -> Iterator[str]:
+        with self._client.messages.stream(
+            model=self._model,
+            max_tokens=2048,
+            temperature=temperature,
+            messages=messages,
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
 
 
 class MockProvider(BaseProvider):
@@ -109,3 +152,14 @@ class MockProvider(BaseProvider):
         if "listening" in content:
             return self._RESPONSES["evaluate_listening"]
         return self._RESPONSES["evaluate_turn"]
+
+    def chat_complete_stream(
+        self,
+        messages: list[dict[str, str]],
+        response_format: dict[str, str] | None = None,
+        temperature: float = 0.7,
+    ) -> Iterator[str]:
+        full = self.chat_complete(messages, response_format, temperature)
+        chunk_size = 12
+        for i in range(0, len(full), chunk_size):
+            yield full[i:i + chunk_size]

@@ -2,17 +2,19 @@
  * Interview Routes — /api/sessions (via router mount in routes/index.ts)
  *
  * Patterns enforced:
- *   W1  — BullMQ jobs NEVER in hot path; post-session cleanup via process.nextTick only
+ *   W1  — DB writes via process.nextTick (non-blocking hot path)
  *   W3  — Audio received as multipart/form-data via multer.single('audio'), never base64
  *   W5  — Node.js owns difficulty decisions; LLM recommendation is a hint only
  *   W8  — GET /bank-fallback: pure DB question, no LLM, synchronous
  *   W9  — FastAPI returns 0-10 scores; Node.js converts to 0-100 before storing
- *   W10 — DB read for token_version on every request
+ *   W10 — DB read for token_version on every request (via authenticate middleware)
  */
 
 import { Router, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import axios from 'axios';
+import { IncomingMessage } from 'http';
 import FormData from 'form-data';
 import { z } from 'zod';
 import { db } from '../shared/db/pool';
@@ -21,14 +23,16 @@ import { sendSuccess, sendError } from '../shared/helpers/response';
 import { authenticate, AuthRequest } from '../middleware/authenticate';
 import { requireRole } from '../middleware/authorize';
 import { env } from '../config/env';
-import { sessionContextService, TurnContext } from '../services/sessionContextService';
+import { sessionContextService, TurnContext, InterviewState } from '../services/sessionContextService';
+import { wsManager } from '../services/wsManager';
 
 export const interviewRouter = Router();
 
 // ── Multer: audio upload (W3 — never base64) ─────────────────────────────────
+
 const audioUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max per audio segment
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('audio/') || file.originalname.endsWith('.wav')) {
       cb(null, true);
@@ -40,6 +44,30 @@ const audioUpload = multer({
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
+const ResumeSchema = z.object({
+  name: z.string().default(''),
+  experience_level: z.string().default('fresher'),
+  skills: z.object({
+    languages: z.array(z.string()).default([]),
+    frameworks: z.array(z.string()).default([]),
+    databases: z.array(z.string()).default([]),
+    tools: z.array(z.string()).default([]),
+  }).default({}),
+  projects: z.array(z.object({
+    title: z.string(),
+    tech_stack: z.array(z.string()).default([]),
+    description: z.string().default(''),
+  })).default([]),
+  summary: z.string().default(''),
+});
+
+const StartSessionSchema = z.object({
+  resume: ResumeSchema,
+  topics: z.array(z.string()).optional(),
+  maxTurns: z.number().int().min(1).max(30).default(10),
+  domain: z.string().optional(),
+});
+
 const TurnMetadataSchema = z.object({
   sessionId: z.string().uuid(),
   studentId: z.string().uuid(),
@@ -49,15 +77,57 @@ const TurnMetadataSchema = z.object({
   domain: z.string().optional(),
 });
 
+const ConcludeSessionSchema = z.object({
+  overallScore: z.number().min(0).max(100),
+});
+
 const BankFallbackQuerySchema = z.object({
   difficulty: z.enum(['EASY', 'MEDIUM', 'ADVANCED']).default('EASY'),
   domain: z.string().optional(),
 });
 
-// ── W5: Server-owned difficulty gating ───────────────────────────────────────
+// ── First question (no LLM call — sent by Node.js directly) ──────────────────
+
+const FIRST_QUESTION =
+  "Tell me about yourself. Walk me through your background, the key skills you've built, and what you've been working on most recently.";
+
+const FIRST_QUESTION_RUBRIC: Record<string, unknown> = {
+  key_concepts: ['background', 'relevant skills', 'recent work', 'career motivation'],
+  strong_indicators: [
+    'Structured answer with clear progression',
+    'Names specific technologies or projects',
+    'Connects past experience to the role',
+  ],
+  weak_indicators: [
+    'Rambling with no structure',
+    'Generic personal details unrelated to tech',
+    'Cannot name specific skills or projects',
+  ],
+  scoring_bands: {
+    high: '8-10: Structured, confident, cites specific technical examples',
+    mid: '5-7: Decent overview but lacks specifics or structure',
+    low: '0-4: Unstructured, vague, or off-topic',
+  },
+  follow_up_probes: [
+    "You mentioned [X project] — what was the most challenging part of building it?",
+    "Which of those skills do you feel most confident demonstrating today?",
+  ],
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 type Difficulty = 'EASY' | 'MEDIUM' | 'ADVANCED';
 
+function buildCurriculum(
+  skills: { languages: string[]; frameworks: string[]; databases: string[] },
+  customTopics?: string[],
+): string[] {
+  if (customTopics?.length) return customTopics;
+  const all = [...skills.languages, ...skills.frameworks, ...skills.databases];
+  return all.length > 0 ? all.slice(0, 4) : ['General Programming'];
+}
+
+// W5: Node.js owns difficulty gating — LLM recommendation is a hint only
 function determineDifficulty(
   recommended: Difficulty,
   currentScore: number,
@@ -68,8 +138,7 @@ function determineDifficulty(
   return recommended;
 }
 
-// ── W9: Score normalisation (FastAPI returns 0-10; Node.js → 0-100) ──────────
-
+// W9: FastAPI returns 0-10 scores → Node.js converts to 0-100
 interface RawEvaluation {
   technical_score: number;
   filler_count: number;
@@ -82,20 +151,22 @@ interface RawEvaluation {
   transcript: string;
   stt_raw: string;
   pace_wpm: number;
+  conversational_response: string;
+  next_question_text: string;
+  rubric_for_next_question: Record<string, unknown>;
+  update_state: { mark_topic_completed?: string | null; add_to_do_not_ask?: string | null };
+  context_summary: string;
 }
 
-interface NormalisedScores {
+function normaliseScores(raw: RawEvaluation): {
   technicalScore: number;
   communicationScore: number;
   overallScore: number;
-}
-
-function normaliseScores(raw: RawEvaluation): NormalisedScores {
+} {
   const technicalScore = Math.round(raw.technical_score * 10);
+  const fillerPenalty = Math.max(0, 100 - raw.filler_count * 5); // guard against negative
   const communicationScore = Math.round(
-    (100 - raw.filler_count * 5) * 0.4 +
-    raw.fluency_score * 0.3 +
-    raw.clarity_score * 0.3,
+    fillerPenalty * 0.4 + raw.fluency_score * 0.3 + raw.clarity_score * 0.3,
   );
   const overallScore = Math.round(technicalScore * 0.7 + communicationScore * 0.3);
   return {
@@ -105,19 +176,125 @@ function normaliseScores(raw: RawEvaluation): NormalisedScores {
   };
 }
 
+// ── SSE stream consumer — parses FastAPI evaluate-response event stream ──────
+// Forwards text_chunk events to WebSocket in real time; resolves with the
+// 'result' event payload when the stream ends.
+
+async function consumeAIStream(
+  stream: IncomingMessage,
+  sessionId: string,
+): Promise<RawEvaluation | null> {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    let result: RawEvaluation | null = null;
+
+    stream.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6)) as { type: string; text?: string; data?: RawEvaluation; message?: string };
+          if (event.type === 'text_chunk' && event.text) {
+            wsManager.emit(sessionId, { type: 'text_chunk', text: event.text });
+          } else if (event.type === 'text_end') {
+            wsManager.emit(sessionId, { type: 'text_end' });
+          } else if (event.type === 'result' && event.data) {
+            result = event.data;
+          } else if (event.type === 'error') {
+            reject(new Error(event.message ?? 'AI service error'));
+          }
+        } catch {
+          // malformed SSE line — skip
+        }
+      }
+    });
+
+    stream.on('end', () => resolve(result));
+    stream.on('error', (err) => reject(err));
+  });
+}
+
+// ── POST /api/sessions — start interview session ──────────────────────────────
+
+interviewRouter.post(
+  '/',
+  authenticate,
+  requireRole('STUDENT'),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      let body: z.infer<typeof StartSessionSchema>;
+      try {
+        body = StartSessionSchema.parse(req.body);
+      } catch {
+        throw new AppError(
+          422,
+          'A valid resume is required to start an interview',
+          'RESUME_REQUIRED',
+        );
+      }
+
+      const studentId = req.user!.id;
+      const sessionId = uuidv4();
+      const curriculum = buildCurriculum(body.resume.skills, body.topics);
+
+      const initialState: InterviewState = {
+        session_id: sessionId,
+        student_id: studentId,
+        topic_curriculum: curriculum,
+        completed_topics: [],
+        active_topic: curriculum[0] ?? 'General',
+        active_topic_question_count: 0,
+        max_questions_per_topic: 3,
+        do_not_ask_or_repeat: [FIRST_QUESTION],
+        current_turn: 1,
+        max_turns: body.maxTurns,
+        current_difficulty: 'EASY',
+        candidate_performance_trend: 'stable',
+        consecutive_weak_answers: 0,
+        current_question: FIRST_QUESTION,
+        current_question_turn: 1,
+        current_rubric: FIRST_QUESTION_RUBRIC,
+      };
+
+      // Seed Redis (parallel)
+      await Promise.all([
+        sessionContextService.setState(sessionId, initialState),
+        sessionContextService.setResume(sessionId, body.resume as Record<string, unknown>),
+      ]);
+
+      // Create DB row
+      await db.query(
+        `INSERT INTO session.interview_sessions (id, student_id, status, interview_state)
+         VALUES ($1, $2, 'active', $3)`,
+        [sessionId, studentId, JSON.stringify(initialState)],
+      );
+
+      sendSuccess(res, {
+        sessionId,
+        firstQuestion: FIRST_QUESTION,
+        curriculum,
+        status: 'active',
+      });
+    } catch (err) {
+      sendError(res, err);
+    }
+  },
+);
+
 // ── POST /api/sessions/:id/turns — submit a turn (W1, W3, W5, W9) ────────────
 
 interviewRouter.post(
   '/:id/turns',
   authenticate,
   requireRole('STUDENT'),
-  audioUpload.single('audio'), // W3 — multer, not base64
+  audioUpload.single('audio'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const metadataRaw = req.body?.metadata;
-      if (!metadataRaw) {
-        throw new AppError(400, 'metadata field is required', 'MISSING_METADATA');
-      }
+      if (!metadataRaw) throw new AppError(400, 'metadata field is required', 'MISSING_METADATA');
 
       let meta: z.infer<typeof TurnMetadataSchema>;
       try {
@@ -134,10 +311,19 @@ interviewRouter.post(
         throw new AppError(400, 'Audio file is required', 'MISSING_AUDIO');
       }
 
-      // ── Fetch Redis context for LLM (last 10 turns) ──────────────────────
-      const previousTurns = await sessionContextService.getTurns(meta.sessionId, 10).catch(() => []);
+      // ── Pull full session context from Redis (parallel) ───────────────────
+      const [interviewState, shortTermSummaries, resume] = await Promise.all([
+        sessionContextService.getState(meta.sessionId).catch(() => null),
+        sessionContextService.getSummaries(meta.sessionId, 10).catch(() => [] as string[]),
+        sessionContextService.getResume(meta.sessionId).catch(() => null),
+      ]);
 
-      // ── Forward audio to FastAPI /ai/evaluate-response ────────────────────
+      const currentRubric = interviewState?.current_rubric ?? null;
+
+      // ── Notify client: processing started ────────────────────────────────
+      wsManager.emit(meta.sessionId, { type: 'status', stage: 'transcribing' });
+
+      // ── Forward audio + full context to FastAPI ───────────────────────────
       const fd = new FormData();
       fd.append('audio', req.file.buffer, {
         filename: req.file.originalname || 'audio.wav',
@@ -149,26 +335,30 @@ interviewRouter.post(
           question_text: meta.questionText,
           difficulty: meta.difficulty,
           turn_number: meta.turnNumber,
+          session_id: meta.sessionId,
+          student_id: meta.studentId,
           domain: meta.domain,
-          previous_turns: previousTurns.map((t) => ({
-            question_text: t.question,
-            student_answer: t.answer,
-            difficulty: t.difficulty,
-            technical_score: null,
-          })),
+          interview_state: interviewState ?? {},
+          short_term_context: shortTermSummaries,
+          current_rubric: currentRubric,
+          resume: resume ?? {},
         }),
       );
 
+      wsManager.emit(meta.sessionId, { type: 'status', stage: 'evaluating' });
+
       let raw: RawEvaluation | null = null;
       try {
-        const aiResp = await axios.post<RawEvaluation>(
+        wsManager.emit(meta.sessionId, { type: 'status', stage: 'generating' });
+        const aiResp = await axios.post(
           `${env.AI_SERVICE_URL}/ai/evaluate-response`,
           fd,
-          { headers: fd.getHeaders(), timeout: 60_000 },
+          { headers: fd.getHeaders(), timeout: 120_000, responseType: 'stream' },
         );
-        raw = aiResp.data;
+        raw = await consumeAIStream(aiResp.data as IncomingMessage, meta.sessionId);
       } catch {
-        // AI service unavailable — proceed with empty scores
+        wsManager.emit(meta.sessionId, { type: 'error', message: 'AI service unavailable' });
+        // proceed with empty scores
       }
 
       const { technicalScore, communicationScore, overallScore } = raw
@@ -179,24 +369,35 @@ interviewRouter.post(
         ? determineDifficulty(raw.next_recommended_difficulty, technicalScore, meta.difficulty)
         : meta.difficulty;
 
-      // ── Persist turn to Redis context ─────────────────────────────────────
-      const turnCtx: TurnContext = {
-        turn: meta.turnNumber,
-        question: meta.questionText,
-        answer: raw?.transcript || '',
-        difficulty: meta.difficulty,
-        ts: new Date().toISOString(),
-      };
-      await sessionContextService.appendTurn(meta.sessionId, turnCtx).catch(() => {});
+      // ── Update Redis state synchronously before responding ────────────────
+      const updatedState = raw
+        ? await sessionContextService
+            .updateState(meta.sessionId, {
+              ...(raw.update_state ?? {}),
+              next_recommended_difficulty: raw.next_recommended_difficulty,
+              increment_turn: true,
+              increment_topic_question_count: true,
+              current_question: raw.next_question_text ?? '',
+              current_question_turn: meta.turnNumber + 1,
+              current_rubric: raw.rubric_for_next_question ?? {},
+            })
+            .catch(() => null)
+        : null;
 
-      // ── Flush transcript to PostgreSQL (safety write per turn, W1) ────────
-      process.nextTick(() => {
-        sessionContextService.flushToDb(meta.sessionId, meta.studentId).catch((err) =>
-          console.error('[interview.routes] flushToDb error:', err),
-        );
-      });
+      // ── Persist turn to Redis context (skip if STT returned nothing) ──────
+      if (raw?.transcript) {
+        const turnCtx: TurnContext = {
+          turn: meta.turnNumber,
+          question: meta.questionText,
+          answer: raw.transcript,
+          summary: raw.context_summary || '',
+          difficulty: meta.difficulty,
+          ts: new Date().toISOString(),
+        };
+        await sessionContextService.appendTurn(meta.sessionId, turnCtx).catch(() => {});
+      }
 
-      sendSuccess(res, {
+      const turnPayload = {
         transcript: raw?.transcript ?? '',
         technicalScore,
         communicationScore,
@@ -205,13 +406,82 @@ interviewRouter.post(
         strengths: raw?.strengths ?? '',
         weaknesses: raw?.weaknesses ?? '',
         nextDifficulty,
+        nextQuestionText: raw?.next_question_text ?? '',
+        contextSummary: raw?.context_summary ?? '',
         audioMetrics: {
           paceWpm: raw?.pace_wpm ?? 0,
           fillerCount: raw?.filler_count ?? 0,
           fluencyScore: raw?.fluency_score ?? 0,
           clarityScore: raw?.clarity_score ?? 0,
         },
+      };
+
+      // ── Send HTTP response immediately ────────────────────────────────────
+      sendSuccess(res, { ...turnPayload, conversationalResponse: raw?.conversational_response ?? '' });
+
+      // ── Emit turn_result + DB checkpoint (non-blocking) ──────────────────
+      process.nextTick(async () => {
+        try {
+          wsManager.emit(meta.sessionId, { type: 'turn_result', data: turnPayload });
+
+          // DB checkpoint on topic switch or every 5 turns
+          const isTopicSwitch = Boolean(raw?.update_state?.mark_topic_completed);
+          const isFiveTurnMark = meta.turnNumber % 5 === 0;
+          if (updatedState && (isTopicSwitch || isFiveTurnMark)) {
+            await sessionContextService.checkpointToDb(meta.sessionId);
+          }
+
+          await sessionContextService.flushToDb(meta.sessionId, meta.studentId);
+        } catch (err) {
+          console.error('[interview.routes] post-turn async error:', err);
+        }
       });
+    } catch (err) {
+      sendError(res, err);
+    }
+  },
+);
+
+// ── POST /api/sessions/:id/conclude — finalise session ───────────────────────
+
+interviewRouter.post(
+  '/:id/conclude',
+  authenticate,
+  requireRole('STUDENT'),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const sessionId = req.params.id as string;
+
+      let body: z.infer<typeof ConcludeSessionSchema>;
+      try {
+        body = ConcludeSessionSchema.parse(req.body);
+      } catch {
+        throw new AppError(422, 'overallScore (0-100) is required', 'MISSING_SCORE');
+      }
+
+      const state = await sessionContextService.getState(sessionId);
+      const studentId = (state?.student_id ?? req.user!.id) as string;
+
+      // Flush final state to DB
+      await db.query(
+        `UPDATE session.interview_sessions
+         SET status        = 'completed',
+             overall_score = $1,
+             ended_at      = now(),
+             interview_state = $2,
+             updated_at    = now()
+         WHERE id = $3`,
+        [body.overallScore, JSON.stringify(state ?? {}), sessionId],
+      );
+
+      // Final transcript flush (non-blocking)
+      process.nextTick(() => {
+        sessionContextService
+          .flushToDb(sessionId, studentId)
+          .catch((err) => console.error('[interview.routes] conclude flushToDb error:', err));
+      });
+
+      sendSuccess(res, { sessionId, status: 'completed', overallScore: body.overallScore });
     } catch (err) {
       sendError(res, err);
     }
@@ -230,22 +500,23 @@ interviewRouter.get(
       if (!parsed.success) throw new AppError(400, 'Invalid query parameters', 'VALIDATION_ERROR');
       const query = parsed.data;
 
-      const { rows } = await db.query(
-        `SELECT id, question_text, difficulty, category, domain
-         FROM session.question_bank
-         WHERE difficulty = $1
-           AND ($2::text IS NULL OR domain = $2)
-         ORDER BY random()
-         LIMIT 1`,
-        [query.difficulty, query.domain ?? null],
-      ).catch(() => ({ rows: [] as any[] })); // table may not exist yet (pre-M2)
+      const { rows } = await db
+        .query(
+          `SELECT id, question_text, difficulty, category, domain
+           FROM session.question_bank
+           WHERE difficulty = $1
+             AND ($2::text IS NULL OR domain = $2)
+           ORDER BY random()
+           LIMIT 1`,
+          [query.difficulty, query.domain ?? null],
+        )
+        .catch(() => ({ rows: [] as any[] }));
 
       if (rows.length > 0) {
         sendSuccess(res, rows[0]);
         return;
       }
 
-      // Static fallback when question_bank table isn't available yet
       const staticFallbacks: Record<string, string> = {
         EASY: 'Explain the difference between synchronous and asynchronous programming.',
         MEDIUM: 'How would you design a rate limiter for a high-traffic API?',
@@ -264,10 +535,3 @@ interviewRouter.get(
     }
   },
 );
-
-// ── M2 stubs — implemented when Module 2 migrations (031+) run ───────────────
-
-// POST /api/sessions              — start session (eligibility + credit check)
-// GET  /api/sessions/:id          — get session state
-// POST /api/sessions/:id/conclude — finalise session, flush Redis → PostgreSQL
-// POST /api/sessions/:id/proctor-event — record tab-switch / fullscreen-exit
