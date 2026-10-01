@@ -36,14 +36,58 @@ attemptsRouter.post(
       if (students.length === 0) throw new AppError(404, 'Student record not found', 'NOT_FOUND');
       const { student_id, batch_id, subdivision_id, program_id } = students[0];
 
-      // Check assessment exists
+      // Check assessment exists and fetch targeting columns
       const { rows: assessments } = await db.query(
-        `SELECT id, assessment_type, interview_type, version, is_active
+        `SELECT id, assessment_type, interview_type, version, is_active,
+                target_program_id, target_sub_program_id
          FROM assessment.assessments WHERE id = $1`,
         [assessmentId]
       );
       if (assessments.length === 0) throw new AppError(404, 'Assessment not found', 'NOT_FOUND');
       if (!assessments[0].is_active) throw new AppError(409, 'Assessment is not active', 'ASSESSMENT_INACTIVE');
+
+      // ── Assessment targeting check ─────────────────────────────────────────
+      // If the assessment targets a specific program (and optionally sub-program),
+      // the student must be enrolled in that program via org.student_programs.
+      // Legacy students (registered before student_programs existed) are checked
+      // via their batch→program chain as a fallback so existing functionality
+      // is preserved.
+      const { target_program_id, target_sub_program_id } = assessments[0];
+      if (target_program_id) {
+        const { rows: enrolled } = await db.query(
+          `SELECT 1
+           FROM (
+             -- Primary: explicit enrollment via student_programs (imported/newly enrolled students)
+             SELECT sp.sub_program_id
+             FROM org.student_programs sp
+             WHERE sp.student_id = $1 AND sp.program_id = $2
+
+             UNION ALL
+
+             -- Fallback: legacy student (no student_programs rows) enrolled via batch→program
+             SELECT NULL::uuid AS sub_program_id
+             FROM org.students s
+             JOIN org.batches b ON b.id = s.batch_id
+             WHERE s.id = $1
+               AND b.program_id = $2
+               AND NOT EXISTS (SELECT 1 FROM org.student_programs WHERE student_id = $1)
+           ) AS enrollment
+           WHERE ($3::uuid IS NULL OR sub_program_id = $3::uuid)
+           LIMIT 1`,
+          [student_id, target_program_id, target_sub_program_id ?? null]
+        );
+
+        if (enrolled.length === 0) {
+          const targetDesc = target_sub_program_id
+            ? 'the required program and sub-program'
+            : 'the required program';
+          throw new AppError(
+            403,
+            `You are not enrolled in ${targetDesc} for this assessment`,
+            'NOT_ENROLLED'
+          );
+        }
+      }
 
       // Guard: no concurrent IN_PROGRESS attempt for same assessment
       const { rows: active } = await db.query(

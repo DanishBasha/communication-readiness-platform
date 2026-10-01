@@ -1,69 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { UserRole } from '../../types';
 import { 
   Search, 
   Command, 
-  ChevronDown, 
-  User, 
-  ShieldCheck, 
-  Layers, 
-  GraduationCap, 
-  Sparkles,
-  Check,
-  KeyRound,
-  X,
-  LogOut
+  LogOut,
+  Plus,
+  Mic
 } from 'lucide-react';
+import { AssignSessionModal } from './AssignSessionModal';
 
 export const Navbar: React.FC = () => {
-  const { activeRole, setActiveRole, student, setActiveView, currentUser, logout } = useApp();
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
-  const [groqModalOpen, setGroqModalOpen] = useState(false);
-  const [groqKeyInput, setGroqKeyInput] = useState('');
-  const [groqStatus, setGroqStatus] = useState<{ configured: boolean; model: string }>({
-    configured: false,
-    model: 'Client-side Evaluation Mode'
-  });
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-
-  // Check Groq status on mount
-  useEffect(() => {
-    const savedKey = localStorage.getItem('groq_api_key');
-    if (savedKey) {
-      setGroqKeyInput(savedKey);
-      setGroqStatus({
-        configured: true,
-        model: 'llama-3.3-70b-versatile'
-      });
-    } else {
-      setGroqStatus({
-        configured: false,
-        model: 'Client-side Evaluation Mode'
-      });
-    }
-  }, []);
-
-  const handleSaveGroqKey = () => {
-    const key = groqKeyInput.trim();
-    if (key) {
-      localStorage.setItem('groq_api_key', key);
-      setGroqStatus({ configured: true, model: 'llama-3.3-70b-versatile' });
-      setSaveMessage("Groq API key activated locally in browser!");
-    } else {
-      localStorage.removeItem('groq_api_key');
-      setGroqStatus({ configured: false, model: 'Client-side Evaluation Mode' });
-      setSaveMessage("Reset to client-side evaluation mode.");
-    }
-    setTimeout(() => {
-      setSaveMessage(null);
-      setGroqModalOpen(false);
-    }, 1200);
-  };
-
-  const bool = (val: any) => Boolean(val && val.trim().length > 0);
+  const { activeRole, student, setActiveView, currentUser, logout } = useApp();
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
 
   const roleBadgeMap: Record<string, string> = {
+    'PLATFORM_OWNER': '🌐 Platform Owner',
     'SUPER_ADMIN': '👑 Super Administrator',
     'PROGRAM_ADMIN': '🏢 Program Administrator',
     'FACULTY_MENTOR': '👨‍🏫 Faculty Mentor',
@@ -82,13 +33,15 @@ export const Navbar: React.FC = () => {
               onClick={() => setActiveView('DASHBOARD')}
               className="flex items-center space-x-2.5 cursor-pointer group"
             >
-              <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-sm shadow-xs group-hover:bg-black transition-colors">
-                R
+              <div className="w-9 h-9 flex items-center justify-center">
+                <img src="/logo.png" alt="PC Logo" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-semibold tracking-tight text-neutral-900">READINESS</span>
-                  <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-neutral-100 text-neutral-600 rounded border border-neutral-200 font-mono">COLLEGE</span>
+                  <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-neutral-100 text-neutral-600 rounded border border-neutral-200 font-mono">
+                    {currentUser?.collegeName ? currentUser.collegeName.split(' ')[0] : 'COLLEGE'}
+                  </span>
                 </div>
                 <span className="text-[11px] text-neutral-500">Placement Communication Suite</span>
               </div>
@@ -107,27 +60,32 @@ export const Navbar: React.FC = () => {
 
           <div className="flex items-center space-x-3">
             
-            {/* Groq API Config Pill */}
-            <button
-              onClick={() => setGroqModalOpen(true)}
-              className="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium border border-neutral-200 hover:border-neutral-300 bg-neutral-50 hover:bg-neutral-100 transition-colors"
-            >
-              <span className={`w-2 h-2 rounded-full ${groqStatus.configured ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-              <span className="text-neutral-700">Groq LLM</span>
-              <span className="text-[10px] font-mono text-neutral-400">{groqStatus.configured ? 'Active' : 'Setup'}</span>
-            </button>
-
             {activeRole === 'STUDENT' && (
               <div className="hidden sm:flex items-center space-x-2 bg-neutral-50 border border-neutral-200/80 px-2.5 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-xs font-medium text-neutral-700">{student?.track || 'HOPE_ELITE'}</span>
+                <span className="text-xs font-medium text-neutral-700">
+                  {(currentUser?.isIndependent || student?.isIndependent) ? '🎯 Independent Candidate' : (student?.track || 'General Track')}
+                </span>
               </div>
             )}
 
-            {/* Authenticated Role Badge */}
+            {activeRole !== 'STUDENT' && (
+              <button
+                type="button"
+                onClick={() => setAssignModalOpen(true)}
+                className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                title="Assign mock interview or listening test to program students or department"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Assign Assessment</span>
+              </button>
+            )}
+
             <div className="flex items-center space-x-2">
               <span className={`px-2.5 py-1 text-xs font-semibold rounded-lg border flex items-center space-x-1.5 ${
-                activeRole === 'SUPER_ADMIN'
+                activeRole === 'PLATFORM_OWNER'
+                  ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                  : activeRole === 'SUPER_ADMIN'
                   ? 'bg-amber-50 text-amber-900 border-amber-200'
                   : activeRole === 'PROGRAM_ADMIN'
                   ? 'bg-blue-50 text-blue-900 border-blue-200'
@@ -141,7 +99,6 @@ export const Navbar: React.FC = () => {
               </span>
             </div>
 
-            {/* User Profile & Sign Out */}
             <div className="flex items-center space-x-2 pl-2 border-l border-neutral-200 ml-1">
               <div className="w-8 h-8 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs font-semibold shadow-xs">
                 {(currentUser?.name || student?.name || 'Aravind Kumar').split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
@@ -169,75 +126,13 @@ export const Navbar: React.FC = () => {
         </div>
       </div>
 
-      {/* Groq API Config Modal */}
-      {groqModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center text-neutral-900">
-                  <KeyRound className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Groq Cloud LLM Settings</h3>
-                  <p className="text-xs text-neutral-500">Isolated adapter in ai-service/app/services/llm_client.py</p>
-                </div>
-              </div>
-              <button onClick={() => setGroqModalOpen(false)} className="text-neutral-400 hover:text-neutral-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-neutral-700 uppercase tracking-wider font-mono">
-                  Groq API Key
-                </label>
-                <input
-                  type="password"
-                  placeholder="gsk_..."
-                  value={groqKeyInput}
-                  onChange={(e) => setGroqKeyInput(e.target.value)}
-                  className="mt-1.5 w-full bg-neutral-50 border border-neutral-200 rounded-lg p-2.5 text-xs text-neutral-900 font-mono focus:outline-none focus:border-neutral-900"
-                />
-                <p className="text-[11px] text-neutral-400 mt-1">
-                  Free API keys at <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-neutral-800 underline">console.groq.com/keys</a>
-                </p>
-              </div>
-
-              <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 text-xs space-y-1">
-                <p className="font-semibold text-neutral-800">Active Model:</p>
-                <p className="text-neutral-600 font-mono">llama-3.3-70b-versatile</p>
-                <p className="text-[11px] text-neutral-500 pt-1">
-                  When no key is provided, the platform automatically runs on high-fidelity offline fallback mode.
-                </p>
-              </div>
-
-              {saveMessage && (
-                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-medium">
-                  {saveMessage}
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-neutral-200 bg-neutral-50/50 flex items-center justify-between">
-              <button
-                onClick={() => setGroqModalOpen(false)}
-                className="text-xs text-neutral-600 hover:text-neutral-900"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveGroqKey}
-                className="bg-neutral-900 hover:bg-black text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors shadow-xs"
-              >
-                Save & Activate
-              </button>
-            </div>
-          </div>
-        </div>
+      {assignModalOpen && (
+        <AssignSessionModal
+          isOpen={assignModalOpen}
+          onClose={() => setAssignModalOpen(false)}
+          defaultRole={activeRole as any}
+        />
       )}
-
     </header>
   );
 };

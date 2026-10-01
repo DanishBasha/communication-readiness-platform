@@ -1,8 +1,17 @@
 
 # API Reference — Communication Readiness Platform
 
-> **Source of truth:** `docs/BACKEND_IMPLEMENTATION_PLAN.md`
-> **Rule:** Do not invent APIs. Anything ambiguous is marked `[NEEDS CONFIRMATION]`.
+> ⚠️ **PLANNING DOCUMENT — SUPERSEDED**  
+> This document was written during the design phase and does NOT reflect the implemented API.  
+> Many endpoint paths, field names, and role names differ from the actual implementation.  
+> **Use [`API_SPECIFICATION.md`](API_SPECIFICATION.md) for the authoritative API contracts.**  
+> **Use [`API_FUNCTION_CATALOG.md`](API_FUNCTION_CATALOG.md) for per-endpoint implementation detail.**  
+> This file is kept for historical context (design decisions, planning rationale).
+
+---
+
+> **Original source of truth note:** `docs/BACKEND_IMPLEMENTATION_PLAN.md`  
+> **Rule:** Do not invent APIs. Anything ambiguous is marked `[NEEDS CONFIRMATION]`.  
 > **Base URL:** `http://localhost:5000`
 
 ---

@@ -12,6 +12,16 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = ""
+    # vLLM-specific settings (used when LLM_PROVIDER=vllm)
+    vllm_base_url: str = ""
+    vllm_model: str = "local-model"
+    vllm_timeout_ms: int = 30000
+    # Embedding service config
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = "text-embedding-3-small"
+    # CORS — comma-separated list of allowed origins (production frontend URL)
+    cors_origins: str = ""
     # Shared secret required by POST /ai/config — set to a strong random string in production
     internal_api_key: str = "change-me"
     # PostgreSQL connection for pgvector turn embeddings (same DB as Node.js backend)

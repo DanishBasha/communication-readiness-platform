@@ -1,0 +1,86 @@
+services:
+  # ── Backend (Node.js Express) ───────────────────────────────────────────────
+  - type: web
+    name: comm-readiness-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: AI_SERVICE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: VLLM_BASE_URL
+        sync: false
+      - key: VLLM_MODEL
+        value: local-model
+      - key: VLLM_TIMEOUT_MS
+        value: "30000"
+      - key: RAG_CHUNK_SIZE
+        value: "2000"
+      - key: RAG_CHUNK_OVERLAP
+        value: "200"
+      - key: RAG_TOP_K
+        value: "5"
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+    healthCheckPath: /api/health
+
+  # ── AI Service (Python FastAPI) ─────────────────────────────────────────────
+  - type: web
+    name: comm-readiness-ai-service
+    runtime: python
+    rootDir: ai-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: LLM_PROVIDER
+        value: mock
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: VLLM_BASE_URL
+        sync: false
+      - key: VLLM_MODEL
+        value: local-model
+      - key: EMBEDDING_BASE_URL
+        sync: false
+      - key: EMBEDDING_API_KEY
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+    healthCheckPath: /health
+
+  # ── Frontend (React static site) ────────────────────────────────────────────
+  - type: web
+    name: comm-readiness-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://comm-readiness-backend.onrender.com/api/:splat
+      - type: rewrite
+        source: /ai/*
+        destination: https://comm-readiness-ai-service.onrender.com/ai/:splat
+      - type: rewrite
+        source: /*
+        destination: /index.html

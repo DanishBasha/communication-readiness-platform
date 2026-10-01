@@ -5,6 +5,7 @@ import {
   DiagnosticReport, 
   TrainerTenure, 
   InterviewAssignment, 
+  AssignmentSubmission, 
   QuestionTurn, 
   Difficulty,
   ParsedResume,
@@ -42,7 +43,10 @@ interface AppContextType {
   openAuthModal: (mode?: 'login' | 'register') => void;
   closeAuthModal: () => void;
   loginUser: (email: string, password: string) => Promise<void>;
+  loginWithAuthUser: (authUser: AuthUser, token?: string) => void;
   registerUser: (data: any) => Promise<void>;
+  registerCandidate: (data: { name: string; email: string; password?: string }) => Promise<void>;
+  completeInviteActivation: (token: string, password: string) => Promise<void>;
   registerExternalUser: (data: { name: string; email: string; password: string; department?: string; batchYear?: number }) => Promise<{ message: string; email: string; simulatedVerificationCode: string }>;
   verifyEmailAndLogin: (email: string, code: string) => Promise<void>;
   logout: () => void;
@@ -63,7 +67,10 @@ interface AppContextType {
   onboardTrainer: (trainer: Omit<TrainerTenure, 'id' | 'isActive'>) => Promise<void>;
   revokeTrainer: (id: string) => Promise<void>;
   assignments: InterviewAssignment[];
-  createAssignment: (assignment: Omit<InterviewAssignment, 'id'>) => Promise<void>;
+  createAssignment: (assignment: Partial<InterviewAssignment>) => Promise<InterviewAssignment>;
+  activeAssignment: InterviewAssignment | null;
+  startAssignedSession: (assignment: InterviewAssignment) => Promise<void>;
+  completeAssignmentSubmission: (assignmentId: string, score: number, sessionType: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION') => Promise<void>;
   toggleCriteriaTask: (taskId: string) => Promise<void>;
   verifyCriteriaTask: (taskId: string) => Promise<void>;
   uploadResumeData: (payload: FormData | { resumeText: string; fileName?: string } | ParsedResume) => Promise<ParsedResume>;
@@ -110,7 +117,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             email: u.email,
             department: u.department || 'Computer Science & Engineering',
             batchYear: u.batchYear || 2026,
-            track: u.track || 'HOPE_ELITE',
+            track: u.track || 'General Track',
             mentorName: 'Dr. S. Ranganathan',
             mentorEmail: 'ranganathan.s@college.edu',
             codingHandles: { leetcodeSolved: 0, githubRepos: 0 },
@@ -125,7 +132,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
   const [trainerTenures, setTrainerTenures] = useState<TrainerTenure[]>(MOCK_TRAINER_TENURES);
   const [assignments, setAssignments] = useState<InterviewAssignment[]>(MOCK_ASSIGNMENTS);
+  const [activeAssignment, setActiveAssignment] = useState<InterviewAssignment | null>(null);
   const [latestReport, setLatestReport] = useState<DiagnosticReport | null>(null);
+
+  useEffect(() => {
+    const fetchAssignments = async () => {
+      try {
+        const list = await api.admin.getAssignments(currentUser?.collegeId);
+        if (list && list.length > 0) {
+          setAssignments(list);
+        }
+      } catch (e) {
+        console.warn('Failed to load assignments:', e);
+      }
+    };
+    fetchAssignments();
+  }, [currentUser?.collegeId]);
 
   const [interviewState, setInterviewState] = useState<InterviewSessionState>({
     isActive: false,
@@ -140,10 +162,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     liveTranscript: ''
   });
 
-  // ── Hydrate auth state on mount ──────────────────────────────────────────
-  // If a stored token exists, validate it against the backend and restore user state.
-  // This ensures that a page refresh picks up the correct user role/name rather than
-  // relying solely on the cached localStorage auth_user JSON.
+  // Hydrate auth state on mount — validates stored token against backend
+  // so a page refresh restores the correct user role/name
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     if (!token) return;
@@ -168,11 +188,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setStudent(prof);
               setLatestReport(prof.recentReports?.[0] ?? null);
             })
-            .catch(() => {}); // Profile fetch failure is non-critical
+            .catch(() => {});
         }
       })
       .catch(() => {
-        // Token invalid or backend unreachable — clear stale auth state
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
         setIsAuthenticated(false);
@@ -250,6 +269,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...prev,
             recentReports: [res.finalReport!, ...prev.recentReports]
           }));
+          if (activeAssignment) {
+            completeAssignmentSubmission(activeAssignment.id, res.finalReport.overallScore, activeAssignment.sessionType);
+          }
           setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
           setActiveView('REPORT_VIEW');
           return;
@@ -275,7 +297,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('[AppContext] Submit turn evaluation error:', e);
     }
 
-    // Local in-memory advance fallback
     setInterviewState(prev => {
       const currentQ = prev.questions[prev.turnIndex];
       const updatedQ: QuestionTurn = {
@@ -392,36 +413,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const endInterview = async () => {
-    const report: DiagnosticReport = {
-      id: `rep-${Date.now().toString().slice(-4)}`,
-      date: new Date().toISOString().split('T')[0],
-      sessionType: interviewState.type,
-      overallScore: Math.floor(Math.random() * 15) + 78,
-      technicalScore: Math.floor(Math.random() * 12) + 82,
-      communicationScore: Math.floor(Math.random() * 14) + 72,
-      averageWpm: Math.floor(Math.random() * 20) + 120,
-      totalFillerWords: Math.floor(Math.random() * 8) + 4,
-      fillerWordBreakdown: { 'uh': 4, 'um': 3, 'like': 2, 'actually': 1 },
-      skillBreakdown: [
-        { skill: 'Java & OOP Principles', score: 92, status: 'STRONG', recommendation: 'Outstanding precision regarding garbage collection and thread lifecycle.' },
-        { skill: 'Database Optimization (PostgreSQL)', score: 78, status: 'MODERATE', recommendation: 'Good knowledge of indexes; brush up on query planner explain output.' },
-        { skill: 'Distributed Messaging (Kafka)', score: 85, status: 'STRONG', recommendation: 'Clearly justified consumer group partitions and fault tolerance.' },
-        { skill: 'System Design & Tradeoffs', score: 58, status: 'NEEDS_WORK', recommendation: 'Review rate limiting algorithms (Token Bucket vs Leaky Bucket).' }
-      ],
-      actionableNextSteps: [
-        'Maintain current cadence! Your speaking rate of 128 WPM is right in the sweet spot (120–150 WPM).',
-        'Watch out for repeating "actually" at the start of technical sentences.',
-        'Study rate-limiting algorithms to polish your distributed system architecture answers.'
-      ],
-      tabSwitches: interviewState.tabSwitches,
-      isFlagged: interviewState.isFlagged
-    };
+    let report: DiagnosticReport | null = null;
+    if (interviewState.sessionId) {
+      try {
+        report = await api.interview.finalize(interviewState.sessionId);
+      } catch (err) {
+        console.warn('Finalize error:', err);
+      }
+    }
+
+    if (!report) {
+      const turns = interviewState.questions;
+      const turnCount = Math.max(1, turns.length);
+      const avgTech = Math.round(turns.reduce((acc, t) => acc + (t.technicalScore || 80), 0) / turnCount);
+      const avgComm = Math.round(turns.reduce((acc, t) => acc + (t.communicationScore || 78), 0) / turnCount);
+      const avgWpm = Math.round(turns.reduce((acc, t) => acc + (t.wpm || 125), 0) / turnCount);
+      const totalFillers = turns.reduce((acc, t) => acc + (t.fillerWords || 0), 0);
+
+      report = {
+        id: `rep-${Date.now().toString().slice(-4)}`,
+        date: new Date().toISOString().split('T')[0],
+        sessionType: interviewState.type,
+        overallScore: Math.round(avgTech * 0.70 + avgComm * 0.30),
+        technicalScore: avgTech,
+        communicationScore: avgComm,
+        averageWpm: avgWpm,
+        totalFillerWords: totalFillers || 2,
+        fillerWordBreakdown: { 'uh': Math.max(1, Math.round(totalFillers * 0.5)), 'like': Math.max(1, Math.round(totalFillers * 0.5)) },
+        skillBreakdown: [
+          { skill: `${student.track} Core Competency`, score: avgTech, status: avgTech >= 80 ? 'STRONG' : 'MODERATE', recommendation: 'Consistent conceptual structure throughout the session.' },
+          { skill: 'Verbal Delivery & Pacing', score: avgComm, status: avgComm >= 80 ? 'STRONG' : 'MODERATE', recommendation: `Pacing averaged ${avgWpm} WPM.` }
+        ],
+        actionableNextSteps: [
+          `Your average pace was ${avgWpm} WPM. ${avgWpm >= 120 && avgWpm <= 150 ? 'Maintain this recruiter-optimal tempo.' : 'Aim for 120-150 WPM.'}`,
+          `Total verbal fillers: ${totalFillers}. Replace verbal fillers with quiet 1-second pauses.`
+        ],
+        tabSwitches: interviewState.tabSwitches,
+        isFlagged: interviewState.isFlagged
+      };
+    }
 
     setLatestReport(report);
     setStudent(prev => ({
       ...prev,
-      recentReports: [report, ...prev.recentReports]
+      recentReports: [report!, ...prev.recentReports]
     }));
+
+    if (activeAssignment && report) {
+      completeAssignmentSubmission(activeAssignment.id, report.overallScore, activeAssignment.sessionType);
+    }
 
     setInterviewState(prev => ({ ...prev, isActive: false, orbState: 'IDLE' }));
     setActiveView('REPORT_VIEW');
@@ -437,7 +477,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         newSwitches = res.tabSwitches;
         flagged = res.isFlagged;
       } catch (err) {
-        // Fallback local increment
       }
     }
 
@@ -466,21 +505,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await api.admin.revokeTrainer(id);
     } catch {
-      // Local fallback
     }
     setTrainerTenures(prev => prev.map(t => t.id === id ? { ...t, isActive: false } : t));
   };
 
-  const createAssignment = async (asg: Omit<InterviewAssignment, 'id'>) => {
+  const createAssignment = async (asg: Partial<InterviewAssignment>): Promise<InterviewAssignment> => {
     try {
       const created = await api.admin.createAssignment(asg);
       setAssignments(prev => [created, ...prev]);
+      return created;
     } catch {
       const newAsg: InterviewAssignment = {
-        ...asg,
-        id: `asg-${Date.now()}`
+        id: `asg-${Date.now()}`,
+        title: asg.title || 'Practice Drill',
+        sessionType: asg.sessionType || 'MOCK_INTERVIEW',
+        assignedByRole: asg.assignedByRole || 'SUPER_ADMIN',
+        assignedByName: asg.assignedByName || 'Placement Cell',
+        targetScope: asg.targetScope || 'ALL_STUDENTS',
+        targetDomainOrTrack: asg.targetDomainOrTrack || 'All Batches',
+        dueDate: asg.dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        isMandatory: asg.isMandatory ?? true,
+        createdAt: new Date().toISOString(),
+        submissions: [],
+        ...asg
       };
       setAssignments(prev => [newAsg, ...prev]);
+      return newAsg;
+    }
+  };
+
+  const startAssignedSession = async (assignment: InterviewAssignment) => {
+    setActiveAssignment(assignment);
+    if (assignment.sessionType === 'LISTENING_COMPREHENSION') {
+      setActiveView('LISTENING_ROOM');
+    } else {
+      await startInterview('MOCK_INTERVIEW');
+    }
+  };
+
+  const completeAssignmentSubmission = async (assignmentId: string, score: number, sessionType: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION') => {
+    const submission: AssignmentSubmission = {
+      studentId: student.id || 'stu-21cs1084',
+      studentName: student.name || 'Aravind Kumar',
+      studentRollNumber: student.rollNumber || '21CS1084',
+      score,
+      sessionType,
+      submittedAt: new Date().toISOString(),
+      status: 'COMPLETED'
+    };
+    try {
+      const res = await api.admin.submitAssignment(assignmentId, submission);
+      if (res && res.assignment) {
+        setAssignments(prev => prev.map(a => a.id === assignmentId ? res.assignment : a));
+      }
+    } catch (e) {
+      console.warn('Failed to record assignment submission:', e);
+      setAssignments(prev => prev.map(a => {
+        if (a.id === assignmentId) {
+          const subs = a.submissions || [];
+          return {
+            ...a,
+            submissions: [...subs.filter(s => s.studentId !== submission.studentId), submission]
+          };
+        }
+        return a;
+      }));
     }
   };
 
@@ -499,7 +588,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await api.tasks.verifyTask(student.id, taskId);
     } catch {
-      // Local fallback
     }
     setStudent(prev => ({
       ...prev,
@@ -530,7 +618,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           projects: [
             {
               title: 'College Placement Readiness Engine',
-              description: 'Real-time AI diagnostic mock platform',
+              description: 'Real-time diagnostic assessment platform',
               techStack: ['React', 'Node.js', 'PostgreSQL']
             }
           ]
@@ -583,7 +671,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       name: user.name,
       email: user.email,
       role: user.role,
-      studentId: res.studentId
+      studentId: res.studentId,
+      collegeId: user.collegeId,
+      collegeName: user.collegeName,
+      programId: user.programId,
+      subProgramName: user.subProgramName,
+      isIndependent: user.isIndependent,
+      permissions: user.permissions
     };
     setCurrentUser(authUser);
     setActiveRole(user.role);
@@ -611,6 +705,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const loginWithAuthUser = (authUser: AuthUser, token?: string) => {
+    if (token) api.setToken(token);
+    setCurrentUser(authUser);
+    setActiveRole(authUser.role);
+    setIsAuthenticated(true);
+    localStorage.setItem('auth_user', JSON.stringify(authUser));
+    setAuthModalOpen(false);
+  };
+
+  const registerCandidate = async (data: { name: string; email: string; password?: string }) => {
+    const res = await api.auth.registerCandidate(data);
+    loginWithAuthUser(res.user, res.token);
+    try {
+      const prof = await api.student.getProfile(res.studentId);
+      if (prof) {
+        setStudent(prof);
+        setLatestReport(null);
+      }
+    } catch (err) {
+      console.warn('Profile fetch after candidate register:', err);
+    }
+  };
+
+  const completeInviteActivation = async (token: string, password: string) => {
+    const res = await api.invites.completePasswordSetup(token, password);
+    loginWithAuthUser(res.user, res.token);
+  };
+
   const registerUser = async (data: any) => {
     const res = await api.auth.register(data);
     const user = res.user;
@@ -621,7 +743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       role: 'STUDENT',
       rollNumber: data.rollNumber,
       department: data.department,
-      track: data.track || 'HOPE_ELITE',
+      track: data.track || 'General Track',
       studentId: res.studentId
     };
     setCurrentUser(authUser);
@@ -636,7 +758,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       rollNumber: data.rollNumber || 'PENDING',
       department: data.department || 'General Engineering',
       batchYear: Number(data.batchYear) || 2026,
-      track: data.track || 'HOPE_ELITE',
+      track: data.track || 'General Track',
       mentorName: 'Unassigned',
       mentorEmail: '',
       codingHandles: { leetcodeSolved: 0, githubRepos: 0 },
@@ -707,7 +829,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       openAuthModal,
       closeAuthModal,
       loginUser,
+      loginWithAuthUser,
       registerUser,
+      registerCandidate,
+      completeInviteActivation,
       registerExternalUser,
       verifyEmailAndLogin,
       logout,
@@ -729,6 +854,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       revokeTrainer,
       assignments,
       createAssignment,
+      activeAssignment,
+      startAssignedSession,
+      completeAssignmentSubmission,
       toggleCriteriaTask,
       verifyCriteriaTask,
       uploadResumeData,

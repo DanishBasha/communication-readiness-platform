@@ -26,10 +26,13 @@ backend/.env
 backend/.env.*
 frontend/.env
 frontend/.env.*
+ai-service/.env
+ai-service/.env.*
 communication-readiness-platform/backend/.env
 communication-readiness-platform/backend/.env.*
 !.env.example
 !backend/.env.example
+!ai-service/.env.example
 !communication-readiness-platform/backend/.env.example
 
 *.log
