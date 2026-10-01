@@ -1,10 +1,10 @@
 # API Specification — Communication Readiness Platform
 
-> **Source of truth:** Backend route files + frontend `api.ts` cross-reference (2026-09-28 audit)  
-> **Branch:** `feature/new-ui-backend-integration`  
-> **Supersedes:** `API_REFERENCE.md` (planning document; field names and paths differ from implementation)  
-> **For implementation detail per endpoint:** see `API_FUNCTION_CATALOG.md`  
-> **For data flows:** see `SYSTEM_ARCHITECTURE.md`  
+> **Source of truth:** Backend route files + frontend `api.ts` cross-reference (2026-10-01 audit)
+> **Branch:** `main` (synchronized with DanishBasha/main team repository)
+> **Supersedes:** `API_REFERENCE.md` (planning document; field names and paths differ from implementation)
+> **For implementation detail per endpoint:** see `API_FUNCTION_CATALOG.md`
+> **For data flows:** see `SYSTEM_ARCHITECTURE.md`
 > **Base URL:** `http://localhost:5000` (Express backend)
 
 ---
@@ -331,14 +331,14 @@ In-process `EventEmitter` — not durable. See `SYSTEM_ARCHITECTURE.md §7` for 
 ```typescript
 { userId: string, studentId: string, email: string, name: string }
 ```
-Emitted by: `POST /api/auth/register`, admin CSV import (new students only)  
+Emitted by: `POST /api/auth/register`, admin CSV import (new students only)
 Handled by: M4 `CreditService.createAccount()`, M1 audit log write
 
 ### `ATTEMPT_COMPLETED`
 ```typescript
 { attemptId, assessmentId, studentId, assessmentType, technicalScore, communicationScore, overallScore, reportId }
 ```
-Emitted by: `POST /api/sessions/:id/complete` (via `setImmediate`)  
+Emitted by: `POST /api/sessions/:id/complete` (via `setImmediate`)
 Handled by: M4 earn credits + recalculate eligibility
 
 ### `CHECKLIST_ITEM_TOGGLED`
