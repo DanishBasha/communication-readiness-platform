@@ -2,33 +2,46 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
 import { ADMIN_PERMISSION_LABELS } from '../../data/mockData';
-import { TrainerTenure, InterviewAssignment, AdminPermission, DynamicProgram } from '../../types';
+import { InterviewAssignment, AdminPermission, DynamicProgram } from '../../types';
 import { StudentHistoryModal } from '../common/StudentHistoryModal';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal';
 import { AssignSessionModal } from '../common/AssignSessionModal';
+import { DatePicker } from '../common/DatePicker';
+import { StudentDirectoryTable } from '../common/StudentDirectoryTable';
+import { AssessmentMonitoringWidget } from '../common/AssessmentMonitoringWidget';
+import { useBackHandler } from '../../hooks/useBackHandler';
+import { DepartmentClassesManager } from '../common/DepartmentClassesManager';
 import { 
   Layers, 
   Plus, 
-  ArrowRight,
+  ArrowRight, 
   CheckCircle2, 
-  AlertCircle,
-  GraduationCap,
-  Sparkles,
-  UserPlus,
-  Calendar,
-  Trash2,
-  Users,
-  Eye,
-  X,
-  ShieldCheck,
-  Lock,
-  Mic,
-  Headphones,
-  Check
+  AlertCircle, 
+  GraduationCap, 
+  Sparkles, 
+  UserPlus, 
+  Calendar, 
+  Trash2, 
+  Users, 
+  Eye, 
+  X, 
+  ShieldCheck, 
+  Lock, 
+  Mic, 
+  Headphones, 
+  Check, 
+  Building2,
+  Search
 } from 'lucide-react';
 
 export const ProgramAdminPortal: React.FC = () => {
-  const { currentUser, assignments, createAssignment, trainerTenures, onboardTrainer, revokeTrainer } = useApp();
+  const { 
+    currentUser, 
+    assignments, 
+    createAssignment, 
+    openStudentDashboard, 
+    openAdminDashboard 
+  } = useApp();
 
   const userPermissions: AdminPermission[] = currentUser?.permissions && currentUser.permissions.length > 0
     ? currentUser.permissions
@@ -36,41 +49,68 @@ export const ProgramAdminPortal: React.FC = () => {
         'CAN_VIEW_STUDENT_PROGRESS',
         'CAN_ASSIGN_INTERVIEWS',
         'CAN_ASSIGN_LISTENING',
-        'CAN_ASSIGN_TRAINERS',
-        'CAN_MANAGE_STUDENTS',
-        'CAN_ASSIGN_SUB_ADMINS'
+        'CAN_MANAGE_STUDENTS'
       ];
 
   const hasPerm = (p: AdminPermission) => userPermissions.includes(p);
 
-  const allowedTabs: ('MENTORS' | 'TRAINERS' | 'ASSIGNMENTS' | 'STUDENTS')[] = [];
-  if (hasPerm('CAN_ASSIGN_SUB_ADMINS')) allowedTabs.push('MENTORS');
-  if (hasPerm('CAN_ASSIGN_TRAINERS')) allowedTabs.push('TRAINERS');
-  if (hasPerm('CAN_ASSIGN_INTERVIEWS') || hasPerm('CAN_ASSIGN_LISTENING')) allowedTabs.push('ASSIGNMENTS');
-  if (hasPerm('CAN_VIEW_STUDENT_PROGRESS') || hasPerm('CAN_MANAGE_STUDENTS')) allowedTabs.push('STUDENTS');
-
-  const [activeTab, setActiveTab] = useState<'MENTORS' | 'TRAINERS' | 'ASSIGNMENTS' | 'STUDENTS'>(() => {
-    return allowedTabs[0] || 'STUDENTS';
-  });
-
-  useEffect(() => {
-    if (allowedTabs.length > 0 && !allowedTabs.includes(activeTab)) {
-      setActiveTab(allowedTabs[0]);
-    }
-  }, [currentUser?.permissions]);
-
   const [programs, setPrograms] = useState<DynamicProgram[]>([]);
   const [domains, setDomains] = useState<string[]>([]);
-  const [selectedProgId, setSelectedProgId] = useState<string>('GENERAL');
-  const [selectedSubProgram, setSelectedSubProgram] = useState<string>('');
   const [mentors, setMentors] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Identity scoping: Is this portal for a specific program admin (e.g. Hope) or department admin?
+  const isDepartmentAdmin = Boolean(currentUser?.department && !currentUser?.programName);
+  const activeProgramName = currentUser?.programName || (!isDepartmentAdmin ? (programs[0]?.name || 'Hope') : '');
+  const activeDeptName = currentUser?.department || '';
+  const activeProgram = programs.find(p => p.name.toLowerCase() === activeProgramName.toLowerCase() || p.id === currentUser?.programId) || programs[0];
+
+  // Specific Program Admin does NOT manage department classes. Only Department Admin has classes & sections.
+  const allowedTabs: ('ASSIGNMENTS' | 'CLASSES' | 'STUDENTS')[] = isDepartmentAdmin 
+    ? ['ASSIGNMENTS', 'CLASSES', 'STUDENTS'] 
+    : ['ASSIGNMENTS', 'STUDENTS'];
+
+  const [activeTab, setActiveTab] = useState<'ASSIGNMENTS' | 'CLASSES' | 'STUDENTS'>('ASSIGNMENTS');
+
+  const [selectedProgId, setSelectedProgId] = useState<string>(activeProgram?.id || 'prog-hope');
+  const [selectedSubProgram, setSelectedSubProgram] = useState<string>('');
+
   const [inspectStudentId, setInspectStudentId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; role: string; email?: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Filter students strictly scoped to this specific program or department
+  const displayedStudents = React.useMemo(() => {
+    if (isDepartmentAdmin) {
+      return students.filter(s => 
+        (s.department && s.department.toLowerCase().includes(activeDeptName.toLowerCase())) ||
+        (activeDeptName.toLowerCase().includes(s.department?.toLowerCase() || ''))
+      );
+    }
+    return students.filter(s => 
+      (s.programName && s.programName.toLowerCase() === activeProgramName.toLowerCase()) ||
+      (s.track && s.track.toLowerCase().includes(activeProgramName.toLowerCase())) ||
+      (activeProgram && s.programId === activeProgram.id)
+    );
+  }, [students, isDepartmentAdmin, activeDeptName, activeProgramName, activeProgram]);
+
+  // Filter assignments strictly scoped to this specific program or department
+  const displayedAssignments = React.useMemo(() => {
+    if (isDepartmentAdmin) {
+      return assignments.filter(a => 
+        (a.targetDepartment && a.targetDepartment.toLowerCase() === activeDeptName.toLowerCase()) ||
+        (a.targetDepartments && a.targetDepartments.some((d: string) => d.toLowerCase() === activeDeptName.toLowerCase())) ||
+        (a.targetDomainOrTrack && a.targetDomainOrTrack.toLowerCase().includes(activeDeptName.toLowerCase()))
+      );
+    }
+    return assignments.filter(a => 
+      (a.targetProgramName && a.targetProgramName.toLowerCase() === activeProgramName.toLowerCase()) ||
+      (a.targetProgramNames && a.targetProgramNames.some((p: string) => p.toLowerCase() === activeProgramName.toLowerCase())) ||
+      (a.targetDomainOrTrack && a.targetDomainOrTrack.toLowerCase().includes(activeProgramName.toLowerCase()))
+    );
+  }, [assignments, isDepartmentAdmin, activeDeptName, activeProgramName]);
 
   const [studentModalOpen, setStudentModalOpen] = useState(false);
   const [stuName, setStuName] = useState('');
@@ -82,28 +122,45 @@ export const ProgramAdminPortal: React.FC = () => {
   const [stuPassword, setStuPassword] = useState('');
   const [stuSubmitting, setStuSubmitting] = useState(false);
 
+  // College student search & program assignment states
+  const [collegeSearchQuery, setCollegeSearchQuery] = useState('');
+  const [assigningStudentId, setAssigningStudentId] = useState<string | null>(null);
+
+  // College-wide departmental students available to be assigned to this program
+  const filteredCollegeStudents = React.useMemo(() => {
+    // Only students who are in any defined department
+    const deptStudents = students.filter(s => Boolean(s.department && s.department.trim().length > 0));
+    if (!collegeSearchQuery.trim()) {
+      return deptStudents;
+    }
+    const q = collegeSearchQuery.trim().toLowerCase();
+    return deptStudents.filter(s => 
+      s.name.toLowerCase().includes(q) ||
+      (s.rollNumber && s.rollNumber.toLowerCase().includes(q)) ||
+      (s.email && s.email.toLowerCase().includes(q)) ||
+      (s.department && s.department.toLowerCase().includes(q)) ||
+      (s.batchYear && String(s.batchYear).includes(q))
+    );
+  }, [students, collegeSearchQuery]);
+
   const [mentorModalOpen, setMentorModalOpen] = useState(false);
   const [mentorName, setMentorName] = useState('');
   const [mentorEmail, setMentorEmail] = useState('');
   const [mentorPassword, setMentorPassword] = useState('');
 
-  const [trainerModalOpen, setTrainerModalOpen] = useState(false);
-  const [trainerName, setTrainerName] = useState('');
-  const [trainerEmail, setTrainerEmail] = useState('');
-  const [trainerDomain, setTrainerDomain] = useState('Full Stack Web Architecture');
-  const [trainerCompany, setTrainerCompany] = useState('Industry Expert / Visiting Mentor');
-  const [trainerStartDate, setTrainerStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [trainerEndDate, setTrainerEndDate] = useState(new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-
   const [asgModalOpen, setAsgModalOpen] = useState(false);
-  const [asgTargetScope, setAsgTargetScope] = useState<'ALL_STUDENTS' | 'PROGRAM' | 'DEPARTMENT' | 'SPECIFIC_STUDENT'>('PROGRAM');
-  const [asgProgramName, setAsgProgramName] = useState<string>('');
-  const [asgDepartment, setAsgDepartment] = useState<string>('');
+  const [asgTargetScope, setAsgTargetScope] = useState<'ALL_STUDENTS' | 'PROGRAM' | 'DEPARTMENT' | 'SPECIFIC_STUDENT'>(isDepartmentAdmin ? 'DEPARTMENT' : 'PROGRAM');
+  const [asgProgramName, setAsgProgramName] = useState<string>(activeProgramName);
+  const [asgDepartment, setAsgDepartment] = useState<string>(isDepartmentAdmin ? activeDeptName : '');
   const [selectedStudentForAssign, setSelectedStudentForAssign] = useState<any | null>(null);
 
   const [allocModalOpen, setAllocModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [selectedMentorId, setSelectedMentorId] = useState('');
+
+  useBackHandler(studentModalOpen, () => setStudentModalOpen(false));
+  useBackHandler(mentorModalOpen, () => setMentorModalOpen(false));
+  useBackHandler(allocModalOpen, () => setAllocModalOpen(false));
 
   const loadPortalData = async () => {
     try {
@@ -122,10 +179,19 @@ export const ProgramAdminPortal: React.FC = () => {
           }
         });
         setDomains(allSubProgs);
-        if (progs.length > 0 && selectedProgId === 'GENERAL') {
-          setSelectedProgId(progs[0].id);
-          if (progs[0].hasSubPrograms && progs[0].subPrograms?.length > 0) {
-            setSelectedSubProgram(progs[0].subPrograms[0]);
+        const matched = progs.find(p => p.name.toLowerCase() === (currentUser?.programName || '').toLowerCase() || p.id === currentUser?.programId);
+        if (matched) {
+          setSelectedProgId(matched.id);
+          if (matched.hasSubPrograms && matched.subPrograms && matched.subPrograms.length > 0) {
+            setSelectedSubProgram(matched.subPrograms[0]);
+          }
+        } else if (progs.length > 0 && selectedProgId === 'GENERAL') {
+          const firstProg = progs[0];
+          if (firstProg) {
+            setSelectedProgId(firstProg.id);
+            if (firstProg.hasSubPrograms && firstProg.subPrograms && firstProg.subPrograms.length > 0) {
+              setSelectedSubProgram(firstProg.subPrograms[0]);
+            }
           }
         }
       }
@@ -163,28 +229,6 @@ export const ProgramAdminPortal: React.FC = () => {
     }
   };
 
-  const handleOnboardTrainer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!trainerName.trim() || !trainerEmail.trim()) return;
-
-    try {
-      await onboardTrainer({
-        trainerName: trainerName.trim(),
-        trainerEmail: trainerEmail.trim(),
-        companyOrInstitute: trainerCompany.trim(),
-        domain: trainerDomain,
-        startDate: trainerStartDate,
-        endDate: trainerEndDate
-      });
-      setFeedback({ type: 'success', message: `Domain Trainer '${trainerName}' onboarded for ${trainerDomain}!` });
-      setTrainerName('');
-      setTrainerEmail('');
-      setTrainerModalOpen(false);
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err?.message || 'Failed to onboard Domain Trainer.' });
-    }
-  };
-
   const handleAssignMentor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentId || !selectedMentorId) return;
@@ -204,27 +248,26 @@ export const ProgramAdminPortal: React.FC = () => {
     if (!stuName.trim() || !stuEmail.trim() || !stuRollNumber.trim()) return;
     setStuSubmitting(true);
     try {
-      const activeProg = programs.find(p => p.id === selectedProgId);
-      const progName = activeProg ? activeProg.name : 'General Track';
-      const trackName = activeProg && activeProg.hasSubPrograms && selectedSubProgram
-        ? `${activeProg.name} (${selectedSubProgram})`
-        : progName;
+      const progName = !isDepartmentAdmin ? activeProgramName : undefined;
+      const targetDept = isDepartmentAdmin ? activeDeptName : stuDepartment;
+      const trackName = !isDepartmentAdmin
+        ? (activeProgram && activeProgram.hasSubPrograms && selectedSubProgram ? `${activeProgram.name} (${selectedSubProgram})` : activeProgramName)
+        : 'DEPARTMENT';
 
-      await api.admin.createStudent({
+      await api.studentBatch.enrollSingle(currentUser?.collegeId || 'col-1', {
         name: stuName.trim(),
         email: stuEmail.trim(),
         rollNumber: stuRollNumber.trim(),
-        department: stuDepartment,
+        department: targetDept,
         batchYear: Number(stuBatchYear),
-        track: trackName,
-        programId: activeProg?.id,
-        programName: activeProg?.name,
-        subProgramName: activeProg?.hasSubPrograms ? selectedSubProgram : undefined,
-        domain: selectedSubProgram || activeProg?.name || stuDepartment,
-        mentorId: stuMentorId || undefined,
+        programName: progName,
+        subProgramName: !isDepartmentAdmin && activeProgram?.hasSubPrograms ? selectedSubProgram : undefined,
         password: stuPassword.trim() || 'student123'
       });
-      setFeedback({ type: 'success', message: `Student '${stuName}' enrolled in ${trackName} successfully!` });
+      setFeedback({ 
+        type: 'success', 
+        message: `Student '${stuName}' enrolled in ${!isDepartmentAdmin ? activeProgramName : activeDeptName} successfully!` 
+      });
       setStudentModalOpen(false);
       setStuName('');
       setStuEmail('');
@@ -235,6 +278,30 @@ export const ProgramAdminPortal: React.FC = () => {
       setFeedback({ type: 'error', message: err?.message || 'Failed to enroll student.' });
     } finally {
       setStuSubmitting(false);
+    }
+  };
+
+  const handleAssignCollegeStudentToProgram = async (targetStudent: any) => {
+    try {
+      setAssigningStudentId(targetStudent.id);
+      const trackName = activeProgram && activeProgram.hasSubPrograms && selectedSubProgram 
+        ? `${activeProgram.name} (${selectedSubProgram})` 
+        : activeProgramName;
+      
+      await api.studentBatch.updateStudentDetails(currentUser?.collegeId || 'col-1', targetStudent.id, {
+        programName: activeProgramName,
+        programId: activeProgram?.id,
+        track: trackName
+      });
+      setFeedback({ 
+        type: 'success', 
+        message: `Successfully assigned ${targetStudent.name} (${targetStudent.rollNumber}) to ${activeProgramName}!` 
+      });
+      await loadPortalData();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Failed to assign student to program.' });
+    } finally {
+      setAssigningStudentId(null);
     }
   };
 
@@ -254,7 +321,7 @@ export const ProgramAdminPortal: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
+    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-8 space-y-8 animate-in fade-in duration-200">
       
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -264,14 +331,13 @@ export const ProgramAdminPortal: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h1 className="text-xl font-bold tracking-tight text-neutral-900">Program Administration Portal</h1>
+                <h1 className="text-xl font-bold tracking-tight text-neutral-900">
+                  {isDepartmentAdmin ? `${activeDeptName} Department Portal` : `${activeProgramName} Admin Portal`}
+                </h1>
                 <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-900 rounded border border-blue-200 font-mono">
-                  PROGRAM LEAD
+                  {isDepartmentAdmin ? 'DEPARTMENT ADMIN' : `${activeProgramName.toUpperCase()} ADMIN`}
                 </span>
               </div>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Manage Faculty Mentors, onboard visiting Domain Trainers, assign student cohorts, and dispatch practice drills.
-              </p>
             </div>
           </div>
         </div>
@@ -281,9 +347,15 @@ export const ProgramAdminPortal: React.FC = () => {
             <button 
               type="button"
               onClick={() => {
-                setAsgTargetScope('PROGRAM');
-                setAsgProgramName(programs[0]?.name || '');
-                setAsgDepartment('');
+                if (isDepartmentAdmin) {
+                  setAsgTargetScope('DEPARTMENT');
+                  setAsgDepartment(activeDeptName);
+                  setAsgProgramName('');
+                } else {
+                  setAsgTargetScope('PROGRAM');
+                  setAsgProgramName(activeProgramName);
+                  setAsgDepartment('');
+                }
                 setSelectedStudentForAssign(null);
                 setAsgModalOpen(true);
                 setFeedback(null);
@@ -296,57 +368,18 @@ export const ProgramAdminPortal: React.FC = () => {
           )}
           {hasPerm('CAN_MANAGE_STUDENTS') && (
             <button 
-              onClick={() => { setStudentModalOpen(true); setFeedback(null); }}
+              onClick={() => { 
+                setCollegeSearchQuery(''); 
+                setStudentModalOpen(true); 
+                setFeedback(null); 
+              }}
               className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-3.5 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs cursor-pointer"
+              title={isDepartmentAdmin ? "Enroll student in department" : `Assign college student to ${activeProgramName}`}
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span>Enroll Student</span>
+              <span>{isDepartmentAdmin ? '+ Enroll Student' : `+ Assign Student to ${activeProgramName}`}</span>
             </button>
           )}
-          {hasPerm('CAN_ASSIGN_SUB_ADMINS') && (
-            <button 
-              onClick={() => { setMentorModalOpen(true); setFeedback(null); }}
-              className="flex items-center space-x-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-300 px-3.5 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer"
-            >
-              <GraduationCap className="w-3.5 h-3.5" />
-              <span>Add Faculty Mentor</span>
-            </button>
-          )}
-          {hasPerm('CAN_ASSIGN_TRAINERS') && (
-            <button 
-              onClick={() => { setTrainerModalOpen(true); setFeedback(null); }}
-              className="flex items-center space-x-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-300 px-3.5 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Onboard Trainer</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Authorized Privileges Banner */}
-      <div className="bg-neutral-900 text-white rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center space-x-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-semibold tracking-wide uppercase text-neutral-300">
-              Admin Scope &amp; Granted Permissions
-            </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-800 text-neutral-400 border border-neutral-700">
-              {userPermissions.length} of 6 Enabled
-            </span>
-          </div>
-          <p className="text-xs text-neutral-400">
-            Assigned by College Super Admin. Actions and tabs outside your granted privileges are restricted.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {userPermissions.map(perm => (
-            <span key={perm} className="px-2.5 py-1 text-[11px] font-medium bg-neutral-800 text-neutral-200 border border-neutral-700 rounded-lg flex items-center space-x-1.5">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-              <span>{ADMIN_PERMISSION_LABELS[perm]?.label || perm}</span>
-            </span>
-          ))}
         </div>
       </div>
 
@@ -369,438 +402,180 @@ export const ProgramAdminPortal: React.FC = () => {
       )}
 
       <div className="flex border-b border-neutral-200 space-x-6 text-xs font-medium">
-        {hasPerm('CAN_ASSIGN_SUB_ADMINS') && (
+        <button
+          onClick={() => setActiveTab('ASSIGNMENTS')}
+          className={`pb-3 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
+            activeTab === 'ASSIGNMENTS'
+              ? 'border-neutral-900 text-neutral-900 font-semibold'
+              : 'border-transparent text-neutral-500 hover:text-neutral-800'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Assessments & Monitoring ({displayedAssignments.length})</span>
+        </button>
+
+        {isDepartmentAdmin && (
           <button
-            onClick={() => setActiveTab('MENTORS')}
+            onClick={() => setActiveTab('CLASSES')}
             className={`pb-3 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'MENTORS'
+              activeTab === 'CLASSES'
                 ? 'border-neutral-900 text-neutral-900 font-semibold'
                 : 'border-transparent text-neutral-500 hover:text-neutral-800'
             }`}
           >
-            <GraduationCap className="w-4 h-4" />
-            <span>Faculty Mentors ({mentors.length})</span>
+            <Building2 className="w-4 h-4" />
+            <span>Department Classes & Sections</span>
           </button>
         )}
 
-        {hasPerm('CAN_ASSIGN_TRAINERS') && (
-          <button
-            onClick={() => setActiveTab('TRAINERS')}
-            className={`pb-3 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'TRAINERS'
-                ? 'border-neutral-900 text-neutral-900 font-semibold'
-                : 'border-transparent text-neutral-500 hover:text-neutral-800'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Domain Trainers ({trainerTenures.filter(t => t.isActive).length})</span>
-          </button>
-        )}
-
-        {(hasPerm('CAN_ASSIGN_INTERVIEWS') || hasPerm('CAN_ASSIGN_LISTENING')) && (
-          <button
-            onClick={() => setActiveTab('ASSIGNMENTS')}
-            className={`pb-3 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'ASSIGNMENTS'
-                ? 'border-neutral-900 text-neutral-900 font-semibold'
-                : 'border-transparent text-neutral-500 hover:text-neutral-800'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>Practice Assignments ({assignments.length})</span>
-          </button>
-        )}
-
-        {(hasPerm('CAN_VIEW_STUDENT_PROGRESS') || hasPerm('CAN_MANAGE_STUDENTS')) && (
-          <button
-            onClick={() => setActiveTab('STUDENTS')}
-            className={`pb-3 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'STUDENTS'
-                ? 'border-neutral-900 text-neutral-900 font-semibold'
-                : 'border-transparent text-neutral-500 hover:text-neutral-800'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Cohort Candidates ({students.length})</span>
-          </button>
-        )}
+        <button
+          onClick={() => setActiveTab('STUDENTS')}
+          className={`pb-3 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
+            activeTab === 'STUDENTS'
+              ? 'border-neutral-900 text-neutral-900 font-semibold'
+              : 'border-transparent text-neutral-500 hover:text-neutral-800'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>{isDepartmentAdmin ? `${activeDeptName} Candidates` : `${activeProgramName} Candidates`} ({displayedStudents.length})</span>
+        </button>
       </div>
 
-      {activeTab === 'MENTORS' && (
-        <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-            <div>
-              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Faculty Mentors Roster</h3>
-              <p className="text-xs text-neutral-500">Mentors create student accounts under their guidance and review mock score readiness.</p>
-            </div>
-            <button
-              onClick={() => setAllocModalOpen(true)}
-              className="text-xs text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-3 py-1.5 rounded-lg border border-neutral-200 font-medium cursor-pointer"
-            >
-              Assign Student to Mentor
-            </button>
-          </div>
-
-          {mentors.length === 0 ? (
-            <div className="text-center py-8 text-neutral-400 text-xs">
-              <GraduationCap className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
-              <p className="font-medium text-neutral-600">No Faculty Mentors added yet.</p>
-              <p className="mt-1">Click "Add Faculty Mentor" above to onboard the department's first mentor.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
-                  <tr>
-                    <th className="py-3 px-4 font-medium">MENTOR NAME</th>
-                    <th className="py-3 px-4 font-medium">EMAIL</th>
-                    <th className="py-3 px-4 font-medium">ASSIGNED MENTEES</th>
-                    <th className="py-3 px-4 font-medium">STATUS</th>
-                    <th className="py-3 px-4 font-medium">ONBOARDED ON</th>
-                    <th className="py-3 px-4 font-medium text-right">ACTION</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {mentors.map((m) => (
-                    <tr key={m.id} className="hover:bg-neutral-50/60 transition-colors">
-                      <td className="py-3 px-4 font-semibold text-neutral-900 flex items-center space-x-2">
-                        <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px]">
-                          FM
-                        </span>
-                        <span>{m.name}</span>
-                      </td>
-                      <td className="py-3 px-4 font-mono text-neutral-600">{m.email}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-800">
-                          {m.menteeCount || 0} Students
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="inline-flex items-center text-[11px] font-medium text-emerald-700">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5" />
-                          {m.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-neutral-500 font-mono text-[11px]">
-                        {new Date(m.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => setDeleteTarget({ id: m.userId || m.id, name: m.name, role: 'FACULTY_MENTOR', email: m.email })}
-                          className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                          title="Remove Faculty Mentor"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'TRAINERS' && (
-        <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-            <div>
-              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Visiting Domain Trainers</h3>
-              <p className="text-xs text-neutral-500">Industry experts on 10–15 day active tenures. Trainers cannot create student accounts.</p>
-            </div>
-            <button
-              onClick={() => setTrainerModalOpen(true)}
-              className="text-xs bg-neutral-900 text-white px-3 py-1.5 rounded-lg hover:bg-black font-medium cursor-pointer"
-            >
-              + Onboard Visiting Trainer
-            </button>
-          </div>
-
-          {trainerTenures.length === 0 ? (
-            <div className="text-center py-8 text-neutral-400 text-xs">
-              <Sparkles className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
-              <p className="font-medium text-neutral-600">No active domain trainer tenures.</p>
-              <p className="mt-1">Click "Onboard Visiting Trainer" to assign an industry instructor to a domain.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
-                  <tr>
-                    <th className="py-3 px-4 font-medium">TRAINER</th>
-                    <th className="py-3 px-4 font-medium">DOMAIN TRACK</th>
-                    <th className="py-3 px-4 font-medium">ORGANIZATION</th>
-                    <th className="py-3 px-4 font-medium">TENURE DATES</th>
-                    <th className="py-3 px-4 font-medium">STATUS</th>
-                    <th className="py-3 px-4 font-medium text-right">ACTION</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {trainerTenures.map((t) => (
-                    <tr key={t.id} className="hover:bg-neutral-50/60 transition-colors">
-                      <td className="py-3 px-4 font-semibold text-neutral-900">
-                        <p>{t.trainerName}</p>
-                        <p className="text-[10px] text-neutral-400 font-mono">{t.trainerEmail}</p>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
-                          {t.domain}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-neutral-600">{t.companyOrInstitute}</td>
-                      <td className="py-3 px-4 font-mono text-[11px] text-neutral-500">
-                        {t.startDate} → {t.endDate}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center text-[11px] font-medium ${
-                          t.isActive ? 'text-emerald-700' : 'text-neutral-400'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${t.isActive ? 'bg-emerald-500' : 'bg-neutral-400'}`} />
-                          {t.isActive ? 'Active Tenure' : 'Revoked / Expired'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right space-x-2">
-                        {t.isActive && (
-                          <button
-                            onClick={() => revokeTrainer(t.id)}
-                            className="text-[11px] text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
-                          >
-                            Revoke
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setDeleteTarget({ id: t.userId || t.id, name: t.trainerName, role: 'DOMAIN_TRAINER', email: t.trainerEmail })}
-                          className="text-[11px] text-rose-600 hover:text-rose-800 hover:underline cursor-pointer ml-1.5"
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
       {activeTab === 'ASSIGNMENTS' && (
-        <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-            <div>
-              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Assigned Practice & Mock Rounds</h3>
-              <p className="text-xs text-neutral-500">Mock rounds dispatched to institutional program cohorts and general departments.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setAsgTargetScope('PROGRAM');
-                  setAsgProgramName(programs[0]?.name || '');
-                  setAsgDepartment('');
-                  setSelectedStudentForAssign(null);
-                  setAsgModalOpen(true);
-                }}
-                className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-lg font-semibold cursor-pointer shadow-xs flex items-center space-x-1.5"
-              >
-                <Mic className="w-3 h-3 text-emerald-200" />
-                <span>+ Assign Assessment to Program</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAsgTargetScope('DEPARTMENT');
-                  setAsgProgramName('');
-                  setAsgDepartment('Computer Science & Engineering');
-                  setSelectedStudentForAssign(null);
-                  setAsgModalOpen(true);
-                }}
-                className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-lg font-semibold cursor-pointer shadow-xs flex items-center space-x-1.5"
-              >
-                <GraduationCap className="w-3 h-3 text-emerald-200" />
-                <span>+ Assign Assessment to Department</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAsgTargetScope('ALL_STUDENTS');
-                  setAsgProgramName('');
-                  setAsgDepartment('');
-                  setSelectedStudentForAssign(null);
-                  setAsgModalOpen(true);
-                }}
-                className="text-xs bg-neutral-900 text-white px-3 py-1.5 rounded-lg hover:bg-black font-medium cursor-pointer"
-              >
-                + Assign Assessment
-              </button>
-            </div>
-          </div>
+        <div className="space-y-6">
+          <AssessmentMonitoringWidget 
+            collegeId={currentUser?.collegeId} 
+            programName={!isDepartmentAdmin ? activeProgramName : undefined}
+            department={isDepartmentAdmin ? activeDeptName : undefined}
+            titlePrefix={!isDepartmentAdmin ? activeProgramName : activeDeptName}
+            hideScopeSelector={true}
+          />
 
-          {assignments.length === 0 ? (
-            <div className="text-center py-8 text-neutral-400 text-xs">
-              <Layers className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
-              <p className="font-medium text-neutral-600">No cohort assignments created yet.</p>
-              <p className="mt-1">Click "Dispatch New Assignment" to assign the first practice interview drill.</p>
+          <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="text-sm font-semibold tracking-tight text-neutral-900">
+                  Assigned Practice & Mock Rounds ({!isDepartmentAdmin ? activeProgramName : activeDeptName})
+                </h3>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isDepartmentAdmin) {
+                      setAsgTargetScope('DEPARTMENT');
+                      setAsgDepartment(activeDeptName);
+                      setAsgProgramName('');
+                    } else {
+                      setAsgTargetScope('PROGRAM');
+                      setAsgProgramName(activeProgramName);
+                      setAsgDepartment('');
+                    }
+                    setSelectedStudentForAssign(null);
+                    setAsgModalOpen(true);
+                  }}
+                  className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-1.5 rounded-lg font-semibold cursor-pointer shadow-xs flex items-center space-x-1.5"
+                >
+                  <Mic className="w-3 h-3 text-emerald-200" />
+                  <span>+ Assign Assessment to {!isDepartmentAdmin ? activeProgramName : activeDeptName}</span>
+                </button>
+              </div>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
-                  <tr>
-                    <th className="py-3 px-4 font-medium">FORMAT</th>
-                    <th className="py-3 px-4 font-medium">ASSIGNMENT TITLE</th>
-                    <th className="py-3 px-4 font-medium">TARGET COHORT</th>
-                    <th className="py-3 px-4 font-medium">ASSIGNED BY</th>
-                    <th className="py-3 px-4 font-medium">SUBMISSIONS</th>
-                    <th className="py-3 px-4 font-medium">DUE DATE</th>
-                    <th className="py-3 px-4 font-medium">POLICY</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {assignments.map((asg) => {
-                    const isInterview = asg.sessionType === 'MOCK_INTERVIEW';
-                    const subsCount = asg.submissions?.length || 0;
-                    return (
-                      <tr key={asg.id} className="hover:bg-neutral-50/60 transition-colors">
-                        <td className="py-3 px-4">
-                          <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            isInterview ? 'bg-neutral-900 text-white' : 'bg-emerald-900 text-emerald-100'
-                          }`}>
-                            {isInterview ? <Mic className="w-2.5 h-2.5 text-emerald-400" /> : <Headphones className="w-2.5 h-2.5 text-emerald-300" />}
-                            <span>{isInterview ? 'Mock Interview' : 'Listening Lab'}</span>
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-neutral-900">{asg.title}</td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
-                            {asg.targetProgramName || asg.targetDomainOrTrack || asg.targetScope}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-neutral-600">{asg.assignedByName}</td>
-                        <td className="py-3 px-4 font-mono font-medium text-neutral-900">
-                          {subsCount} / {students.length}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-[11px] text-neutral-500">{asg.dueDate}</td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            asg.isMandatory ? 'bg-rose-100 text-rose-800' : 'bg-neutral-100 text-neutral-700'
-                          }`}>
-                            {asg.isMandatory ? 'Mandatory' : 'Optional Practice'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+
+            {displayedAssignments.length === 0 ? (
+              <div className="text-center py-8 text-neutral-400 text-xs">
+                <Layers className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
+                <p className="font-medium text-neutral-600">No active assignments created for {!isDepartmentAdmin ? activeProgramName : activeDeptName}.</p>
+                <p className="mt-1">Click "Assign Assessment" above to dispatch the first practice drill.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
+                    <tr>
+                      <th className="py-3 px-4 font-medium">FORMAT</th>
+                      <th className="py-3 px-4 font-medium">ASSIGNMENT TITLE</th>
+                      <th className="py-3 px-4 font-medium">TARGET BATCH</th>
+                      <th className="py-3 px-4 font-medium">ASSIGNED BY</th>
+                      <th className="py-3 px-4 font-medium">SUBMISSIONS</th>
+                      <th className="py-3 px-4 font-medium">DUE DATE</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {displayedAssignments.map((asg) => {
+                      const isInterview = asg.sessionType === 'MOCK_INTERVIEW';
+                      const subsCount = asg.submissions?.length || 0;
+                      return (
+                        <tr key={asg.id} className="hover:bg-neutral-50/60 transition-colors">
+                          <td className="py-3 px-4">
+                            <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              isInterview ? 'bg-neutral-900 text-white' : 'bg-emerald-900 text-emerald-100'
+                            }`}>
+                              {isInterview ? <Mic className="w-2.5 h-2.5 text-emerald-400" /> : <Headphones className="w-2.5 h-2.5 text-emerald-300" />}
+                              <span>{isInterview ? 'Mock Interview' : 'Listening Lab'}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-neutral-900">{asg.title}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
+                              {asg.targetProgramName || asg.targetDomainOrTrack || asg.targetScope}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-neutral-600">{asg.assignedByName}</td>
+                          <td className="py-3 px-4 font-mono font-medium text-neutral-900">
+                            {subsCount} / {displayedStudents.length}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[11px] text-neutral-500">{asg.dueDate}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
+      )}
+
+      {activeTab === 'CLASSES' && isDepartmentAdmin && (
+        <DepartmentClassesManager 
+          collegeId={currentUser?.collegeId} 
+          departmentFilter={activeDeptName} 
+        />
       )}
 
       {activeTab === 'STUDENTS' && (
-        <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-            <div>
-              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Enrolled Student Candidates</h3>
-              <p className="text-xs text-neutral-500">Comprehensive list of candidates across institutional programs and departments.</p>
-            </div>
-            <div className="flex items-center space-x-3">
-              {hasPerm('CAN_MANAGE_STUDENTS') && (
-                <button
-                  onClick={() => { setStudentModalOpen(true); setFeedback(null); }}
-                  className="text-xs bg-neutral-900 text-white px-3 py-1.5 rounded-lg hover:bg-black font-medium cursor-pointer flex items-center space-x-1"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Enroll Student</span>
-                </button>
-              )}
-              <span className="text-xs font-mono text-neutral-400">{students.length} Candidates</span>
-            </div>
-          </div>
-
-          {students.length === 0 ? (
-            <div className="text-center py-8 text-neutral-400 text-xs">
-              <Users className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
-              <p className="font-medium text-neutral-600">No student accounts registered yet.</p>
-              <p className="mt-1">Faculty Mentors and Program Admins create college student accounts.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
-                  <tr>
-                    <th className="py-3 px-4 font-medium">STUDENT</th>
-                    <th className="py-3 px-4 font-medium">ROLL NUMBER</th>
-                    <th className="py-3 px-4 font-medium">TRACK</th>
-                    <th className="py-3 px-4 font-medium">ASSIGNED MENTOR</th>
-                    <th className="py-3 px-4 font-medium">MOCK SCORE</th>
-                    <th className="py-3 px-4 font-medium text-right">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {students.map((s) => (
-                    <tr key={s.id} className="hover:bg-neutral-50/60 transition-colors">
-                      <td className="py-3 px-4 font-semibold text-neutral-900">
-                        {s.name}
-                        <span className="block text-[11px] font-mono text-neutral-400 font-normal">{s.department}</span>
-                      </td>
-                      <td className="py-3 px-4 font-mono text-neutral-600">{s.rollNumber}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
-                          {s.track}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-neutral-600">{s.mentorName || 'Unassigned'}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-neutral-900">
-                        {hasPerm('CAN_VIEW_STUDENT_PROGRESS') ? (
-                          s.score ? `${s.score}%` : '—'
-                        ) : (
-                          <span className="text-neutral-400 text-[10px] font-normal italic inline-flex items-center">
-                            <Lock className="w-2.5 h-2.5 mr-1" />
-                            Restricted
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right space-x-2">
-                        {(hasPerm('CAN_ASSIGN_INTERVIEWS') || hasPerm('CAN_ASSIGN_LISTENING')) && (
-                          <button
-                            onClick={() => {
-                              setSelectedStudentForAssign(s);
-                              setAsgModalOpen(true);
-                            }}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                            title="Assign mock interview or listening test to this student"
-                          >
-                            <Plus className="w-3 h-3 text-emerald-600" />
-                            <span>Assign Assessment</span>
-                          </button>
-                        )}
-                        {hasPerm('CAN_VIEW_STUDENT_PROGRESS') && (
-                          <button
-                            onClick={() => setInspectStudentId(s.id)}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3 h-3" />
-                            <span>View History</span>
-                          </button>
-                        )}
-                        {hasPerm('CAN_MANAGE_STUDENTS') && (
-                          <button
-                            onClick={() => setDeleteTarget({ id: s.userId || s.id, name: s.name, role: 'STUDENT' })}
-                            className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="space-y-4">
+          {hasPerm('CAN_MANAGE_STUDENTS') && (
+            <div className="flex items-center justify-end">
+              <button
+                onClick={() => { 
+                  setCollegeSearchQuery(''); 
+                  setStudentModalOpen(true); 
+                  setFeedback(null); 
+                }}
+                className="text-xs bg-neutral-900 text-white px-3.5 py-2 rounded-xl hover:bg-black font-semibold cursor-pointer flex items-center space-x-1.5 shadow-xs"
+                title={isDepartmentAdmin ? "Enroll candidate in department" : `Assign college student to ${activeProgramName}`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>{isDepartmentAdmin ? '+ Enroll New Candidate' : `+ Assign Student to ${activeProgramName}`}</span>
+              </button>
             </div>
           )}
+
+          <StudentDirectoryTable
+            students={displayedStudents}
+            onSelectStudent={(s) => openStudentDashboard(s)}
+            onAssignStudent={(hasPerm('CAN_ASSIGN_INTERVIEWS') || hasPerm('CAN_ASSIGN_LISTENING')) ? (s) => {
+              setSelectedStudentForAssign(s);
+              setAsgModalOpen(true);
+            } : undefined}
+            showAssignAction={hasPerm('CAN_ASSIGN_INTERVIEWS') || hasPerm('CAN_ASSIGN_LISTENING')}
+            title={isDepartmentAdmin ? `${activeDeptName} Candidates Directory` : `${activeProgramName} Candidates Directory`}
+            subtitle={isDepartmentAdmin 
+              ? `View candidates and readiness scores across ${activeDeptName}` 
+              : `View candidates, readiness scores, and verified criteria strictly for ${activeProgramName}`}
+          />
         </div>
       )}
 
@@ -875,110 +650,6 @@ export const ProgramAdminPortal: React.FC = () => {
         </div>
       )}
 
-      {trainerModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-md p-6 shadow-xl animate-in zoom-in-95 duration-150 space-y-4">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <div className="flex items-center space-x-2">
-                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-900 flex items-center justify-center font-bold text-xs">
-                  T
-                </div>
-                <h3 className="text-sm font-semibold text-neutral-900">Onboard Visiting Domain Trainer</h3>
-              </div>
-              <button onClick={() => setTrainerModalOpen(false)} className="text-neutral-400 hover:text-neutral-600 text-xs">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleOnboardTrainer} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Trainer Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Vikramaditya Sharma"
-                  value={trainerName}
-                  onChange={(e) => setTrainerName(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Trainer Email *</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. trainer@techinstitute.org"
-                  value={trainerEmail}
-                  onChange={(e) => setTrainerEmail(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Assigned Domain Track *</label>
-                <select
-                  value={trainerDomain}
-                  onChange={(e) => setTrainerDomain(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                >
-                  {domains.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Company / Organization</label>
-                <input
-                  type="text"
-                  value={trainerCompany}
-                  onChange={(e) => setTrainerCompany(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">Start Date</label>
-                  <input
-                    type="date"
-                    value={trainerStartDate}
-                    onChange={(e) => setTrainerStartDate(e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">End Date</label>
-                  <input
-                    type="date"
-                    value={trainerEndDate}
-                    onChange={(e) => setTrainerEndDate(e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 focus:outline-none focus:border-neutral-900"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setTrainerModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-200 rounded-xl text-neutral-700 hover:bg-neutral-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-black font-medium"
-                >
-                  Onboard Trainer
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {asgModalOpen && (
         <AssignSessionModal
           isOpen={asgModalOpen}
@@ -1000,6 +671,7 @@ export const ProgramAdminPortal: React.FC = () => {
           defaultDepartment={asgDepartment}
           studentsList={students}
           menteesList={mentors}
+          targetStudent={selectedStudentForAssign}
         />
       )}
 
@@ -1072,146 +744,259 @@ export const ProgramAdminPortal: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-lg p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <h3 className="text-sm font-semibold text-neutral-900">Enroll College Candidate</h3>
-              <button onClick={() => setStudentModalOpen(false)} className="text-neutral-400 hover:text-neutral-600 text-xs">✕</button>
+              <div className="flex items-center space-x-2">
+                <div className="w-7 h-7 rounded-lg bg-neutral-900 text-white flex items-center justify-center text-xs">
+                  {isDepartmentAdmin ? <UserPlus className="w-3.5 h-3.5" /> : <Search className="w-3.5 h-3.5" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-900">
+                    {isDepartmentAdmin 
+                      ? 'Enroll Department Candidate (One-by-One)' 
+                      : `Assign College Student to ${activeProgramName}`}
+                  </h3>
+                  <p className="text-[11px] text-neutral-500">
+                    {isDepartmentAdmin 
+                      ? `Adding single candidate to ${activeDeptName} department` 
+                      : `Search across registered department students to assign to ${activeProgramName}`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => { setStudentModalOpen(false); setCollegeSearchQuery(''); }} className="text-neutral-400 hover:text-neutral-600 text-xs p-1">✕</button>
             </div>
-            <form onSubmit={handleCreateStudent} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Student Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Bavan Balaji"
-                  value={stuName}
-                  onChange={(e) => setStuName(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">College Email *</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="student@college.edu"
-                    value={stuEmail}
-                    onChange={(e) => setStuEmail(e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">Roll Number *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 22CS045"
-                    value={stuRollNumber}
-                    onChange={(e) => setStuRollNumber(e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 font-mono"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">Department</label>
-                  <select
-                    value={stuDepartment}
-                    onChange={(e) => setStuDepartment(e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900"
-                  >
-                    <option value="Computer Science & Engineering">CSE</option>
-                    <option value="Information Technology">IT</option>
-                    <option value="AI & Data Science">AIDS</option>
-                    <option value="Electronics & Communication">ECE</option>
-                    <option value="Electrical & Electronics">EEE</option>
-                    <option value="Mechanical Engineering">Mechanical</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">Batch Year</label>
-                  <input
-                    type="number"
-                    value={stuBatchYear}
-                    onChange={(e) => setStuBatchYear(Number(e.target.value))}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 font-mono"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-neutral-700 mb-1">Institutional Program</label>
-                  {programs.length === 0 ? (
-                    <div className="text-xs text-neutral-500 bg-neutral-50 p-2 rounded-lg border border-neutral-200">
-                      General Track (No custom programs)
-                    </div>
-                  ) : (
-                    <select
-                      value={selectedProgId}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSelectedProgId(val);
-                        const p = programs.find(pr => pr.id === val);
-                        if (p?.hasSubPrograms && p.subPrograms?.length > 0) {
-                          setSelectedSubProgram(p.subPrograms[0]);
-                        } else {
-                          setSelectedSubProgram('');
-                        }
-                      }}
-                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 text-xs"
-                    >
-                      {programs.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                      <option value="GENERAL">General Track</option>
-                    </select>
-                  )}
-                </div>
-                {programs.find(p => p.id === selectedProgId)?.hasSubPrograms ? (
+
+            {!isDepartmentAdmin ? (
+              /* PROGRAM ADMIN: SEARCH & ASSIGN COLLEGE STUDENT TO PROGRAM DOMAIN */
+              <div className="space-y-4">
+                <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl text-blue-900 text-xs flex items-start space-x-2">
+                  <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                   <div>
-                    <label className="block font-medium text-neutral-700 mb-1">Sub-Program / Track Tier</label>
+                    <p className="font-semibold text-blue-950">College Student Program Domain Assignment</p>
+                    <p className="text-[11px] text-blue-800/90 mt-0.5 leading-relaxed">
+                      Students already belong to their academic departments (CSE, IT, ECE, etc.). Search across the college by student name or roll number to assign them to the <strong>{activeProgramName}</strong> domain track.
+                    </p>
+                  </div>
+                </div>
+
+                {activeProgram?.hasSubPrograms && activeProgram?.subPrograms && activeProgram.subPrograms.length > 0 && (
+                  <div className="bg-neutral-50 p-2.5 rounded-xl border border-neutral-200 flex items-center justify-between gap-3 text-xs">
+                    <span className="font-semibold text-neutral-800">Target Track Tier:</span>
                     <select
                       value={selectedSubProgram}
                       onChange={(e) => setSelectedSubProgram(e.target.value)}
-                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 text-xs"
+                      className="px-2.5 py-1.5 bg-white border border-neutral-200 rounded-lg text-xs text-neutral-800 font-medium focus:outline-none"
                     >
-                      {programs.find(p => p.id === selectedProgId)?.subPrograms?.map(sub => (
+                      {activeProgram.subPrograms.map(sub => (
                         <option key={sub} value={sub}>{sub}</option>
                       ))}
                     </select>
                   </div>
-                ) : (
-                  <div>
-                    <label className="block font-medium text-neutral-700 mb-1">Assigned Mentor</label>
-                    <select
-                      value={stuMentorId}
-                      onChange={(e) => setStuMentorId(e.target.value)}
-                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 text-xs"
-                    >
-                      <option value="">-- Optional / Unassigned --</option>
-                      {mentors.map(m => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
-                  </div>
                 )}
+
+                {/* Search Bar */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search college student by name, roll, or batch year (e.g. Aravind, 21CS1084, 2028)..."
+                    value={collegeSearchQuery}
+                    onChange={(e) => setCollegeSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-9 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium text-neutral-900 focus:outline-none focus:border-neutral-900 transition-colors"
+                  />
+                  <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />
+                  {collegeSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setCollegeSearchQuery('')}
+                      className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 text-xs p-0.5"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Search Results List */}
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {filteredCollegeStudents.length === 0 ? (
+                    <div className="p-6 text-center bg-neutral-50 border border-neutral-200/80 rounded-xl space-y-1">
+                      <p className="text-xs font-semibold text-neutral-700">No matching departmental students</p>
+                      <p className="text-[11px] text-neutral-500">
+                        {collegeSearchQuery 
+                          ? `No student matching "${collegeSearchQuery}" found in college departments.` 
+                          : 'No students registered in college departments yet.'}
+                      </p>
+                    </div>
+                  ) : (
+                    filteredCollegeStudents.map(s => {
+                      const isAlreadyEnrolled = 
+                        (s.programName && s.programName.toLowerCase() === activeProgramName.toLowerCase()) ||
+                        (s.track && s.track.toLowerCase().includes(activeProgramName.toLowerCase())) ||
+                        (activeProgram && s.programId === activeProgram.id);
+
+                      return (
+                        <div
+                          key={s.id}
+                          className="p-3 bg-white border border-neutral-200 rounded-xl hover:border-neutral-300 transition-all flex items-center justify-between gap-3 shadow-2xs"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-semibold text-xs text-neutral-900 truncate">{s.name}</span>
+                              <span className="font-mono text-[11px] text-neutral-500 bg-neutral-100 px-1.5 py-0.5 rounded border border-neutral-200">
+                                {s.rollNumber || 'NO ROLL'}
+                              </span>
+                              <span className="text-[10px] font-semibold text-neutral-700 bg-neutral-100 border border-neutral-200 px-1.5 py-0.5 rounded">
+                                Batch {s.batchYear || 2026}
+                              </span>
+                              <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
+                                {s.department || 'General'}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-3 text-[11px] text-neutral-500 mt-1">
+                              <span className="truncate">{s.email}</span>
+                              {s.className && (
+                                <span className="font-mono text-neutral-600 bg-neutral-50 px-1 rounded">
+                                  Class: {s.className}
+                                </span>
+                              )}
+                              {s.programName && s.programName.toLowerCase() !== activeProgramName.toLowerCase() && (
+                                <span className="text-amber-700 text-[10px] bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                  In: {s.programName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0">
+                            {isAlreadyEnrolled ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold">
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>In {activeProgramName}</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={assigningStudentId === s.id}
+                                onClick={() => handleAssignCollegeStudentToProgram(s)}
+                                className="px-3 py-1.5 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl transition-all shadow-xs disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer"
+                              >
+                                {assigningStudentId === s.id ? (
+                                  <span>Assigning...</span>
+                                ) : (
+                                  <>
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Assign to {activeProgramName}</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="text-[11px] text-neutral-500">
+                    Showing {filteredCollegeStudents.length} departmental student(s)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStudentModalOpen(false);
+                      setCollegeSearchQuery('');
+                    }}
+                    className="px-4 py-2 border border-neutral-200 text-neutral-700 rounded-xl hover:bg-neutral-50 text-xs font-medium cursor-pointer"
+                  >
+                    Done / Close
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="block font-medium text-neutral-700 mb-1">Initial Password</label>
-                <input
-                  type="password"
-                  placeholder="Default: student123"
-                  value={stuPassword}
-                  onChange={(e) => setStuPassword(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 font-mono"
-                />
-              </div>
-              <div className="pt-2 flex justify-end space-x-2">
-                <button type="button" onClick={() => setStudentModalOpen(false)} className="px-4 py-2 border rounded-xl hover:bg-neutral-50">Cancel</button>
-                <button type="submit" disabled={stuSubmitting} className="px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-black font-medium">
-                  {stuSubmitting ? 'Enrolling...' : 'Enroll Student'}
-                </button>
-              </div>
-            </form>
+            ) : (
+              /* DEPARTMENT ADMIN: ENROLL CANDIDATE INTO DEPARTMENT */
+              <form onSubmit={handleCreateStudent} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-medium text-neutral-700 mb-1">Student Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Bavan Balaji"
+                    value={stuName}
+                    onChange={(e) => setStuName(e.target.value)}
+                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-medium text-neutral-700 mb-1">College Email *</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="student@college.edu"
+                      value={stuEmail}
+                      onChange={(e) => setStuEmail(e.target.value)}
+                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-neutral-700 mb-1">Roll Number *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 22CS045"
+                      value={stuRollNumber}
+                      onChange={(e) => setStuRollNumber(e.target.value)}
+                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-medium text-neutral-700 mb-1">Department *</label>
+                    <div className="w-full bg-neutral-100 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-800 font-medium truncate">
+                      {activeDeptName}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-neutral-700 mb-1">Batch Year</label>
+                    <input
+                      type="number"
+                      value={stuBatchYear}
+                      onChange={(e) => setStuBatchYear(Number(e.target.value))}
+                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 font-mono"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-medium text-neutral-700 mb-1">Assigned Mentor</label>
+                  <select
+                    value={stuMentorId}
+                    onChange={(e) => setStuMentorId(e.target.value)}
+                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 text-xs"
+                  >
+                    <option value="">-- Optional / Unassigned --</option>
+                    {mentors.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-neutral-700 mb-1">Initial Password</label>
+                  <input
+                    type="password"
+                    placeholder="Default: student123"
+                    value={stuPassword}
+                    onChange={(e) => setStuPassword(e.target.value)}
+                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-neutral-900 font-mono"
+                  />
+                </div>
+                <div className="pt-2 flex justify-end space-x-2">
+                  <button type="button" onClick={() => setStudentModalOpen(false)} className="px-4 py-2 border rounded-xl hover:bg-neutral-50">Cancel</button>
+                  <button type="submit" disabled={stuSubmitting} className="px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-black font-medium">
+                    {stuSubmitting ? 'Enrolling...' : 'Enroll Student'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

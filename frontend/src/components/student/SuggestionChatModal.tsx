@@ -9,6 +9,7 @@ import {
   CheckCircle2, 
   Bot
 } from 'lucide-react';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface SuggestionChatModalProps {
   onClose: () => void;
@@ -31,6 +32,7 @@ interface ChatMessage {
 }
 
 export const SuggestionChatModal: React.FC<SuggestionChatModalProps> = ({ onClose, studentId = 'stu-101' }) => {
+  useBackHandler(true, onClose);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'init-1',

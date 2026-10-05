@@ -65,28 +65,30 @@ export const DEFAULT_CLEAN_STUDENT: StudentProfile = {
     githubRepos: 0
   },
   resume: null,
-  criteriaTasks: INITIAL_CRITERIA_TASKS.map(t => ({ ...t, isCompleted: false, verifiedByMentor: false })),
-  recentReports: []
-};
-
-export const INITIAL_STUDENT_PROFILE: StudentProfile = {
-  id: 'stu-101',
-  name: 'Aravind Kumar',
-  rollNumber: '21CS1084',
-  email: 'aravind.k@college.edu',
-  department: 'Computer Science & Engineering',
-  batchYear: 2026,
-  track: 'General Track',
+    criteriaTasks: INITIAL_CRITERIA_TASKS.map(t => ({ ...t, isCompleted: false, verifiedByMentor: false })),
+    recentReports: [],
+    coins: 5
+  };
+  
+  export const INITIAL_STUDENT_PROFILE: StudentProfile = {
+    id: 'stu-101',
+    name: 'Aravind Kumar',
+    rollNumber: '21CS1084',
+    email: 'aravind.k@college.edu',
+    department: 'Computer Science & Engineering',
+    batchYear: 2026,
+    track: 'General Track',
+    coins: 5,
   mentorName: 'Dr. S. Ranganathan',
   mentorEmail: 'ranganathan.s@college.edu',
   codingHandles: {
-    github: 'https://github.com/aravind-dev',
-    leetcode: 'aravind_coder',
-    hackerrank: 'aravind_k',
-    codeforces: 'aravind_master',
-    codechef: 'aravind_4star',
-    leetcodeSolved: 248,
-    githubRepos: 18
+    github: undefined,
+    leetcode: undefined,
+    hackerrank: undefined,
+    codeforces: undefined,
+    codechef: undefined,
+    leetcodeSolved: 0,
+    githubRepos: 0
   },
   resume: {
     fileName: 'Aravind_Kumar_CSE_Resume.pdf',
@@ -336,47 +338,140 @@ export const MOCK_ASSIGNMENTS: InterviewAssignment[] = [
         studentName: 'Aravind Kumar',
         studentRollNumber: '21CS1084',
         score: 86,
+        technicalScore: 88,
+        communicationScore: 84,
+        fluencyScore: 86,
+        department: 'Computer Science & Engineering',
         sessionType: 'MOCK_INTERVIEW',
         submittedAt: '2026-09-22T10:30:00Z',
-        status: 'COMPLETED'
+        status: 'COMPLETED',
+        recommendation: 'PLACEMENT_READY'
+      },
+      {
+        studentId: 'stu-21cs1092',
+        studentName: 'Pooja Sundaram',
+        studentRollNumber: '21CS1092',
+        score: 91,
+        technicalScore: 92,
+        communicationScore: 90,
+        fluencyScore: 91,
+        department: 'Computer Science & Engineering',
+        sessionType: 'MOCK_INTERVIEW',
+        submittedAt: '2026-09-23T14:15:00Z',
+        status: 'COMPLETED',
+        recommendation: 'PLACEMENT_READY'
+      },
+      {
+        studentId: 'stu-21cs1015',
+        studentName: 'Karthik Raja',
+        studentRollNumber: '21CS1015',
+        score: 72,
+        technicalScore: 70,
+        communicationScore: 74,
+        fluencyScore: 72,
+        department: 'Information Technology',
+        sessionType: 'MOCK_INTERVIEW',
+        submittedAt: '2026-09-24T09:45:00Z',
+        status: 'COMPLETED',
+        recommendation: 'ON_TRACK'
+      },
+      {
+        studentId: 'stu-21cs1038',
+        studentName: 'Deepa Natarajan',
+        studentRollNumber: '21CS1038',
+        score: 78,
+        technicalScore: 80,
+        communicationScore: 76,
+        fluencyScore: 78,
+        department: 'Information Technology',
+        sessionType: 'MOCK_INTERVIEW',
+        submittedAt: '2026-09-24T16:20:00Z',
+        status: 'COMPLETED',
+        recommendation: 'ON_TRACK'
       }
     ]
   },
   {
     id: 'asg-2',
-    title: 'Auditory Precision Drill: FinPay Transaction Gateway',
+    title: 'Listening Precision Drill: FinPay Transaction Gateway',
     sessionType: 'LISTENING_COMPREHENSION',
-    assignedByRole: 'FACULTY_MENTOR',
-    assignedByName: 'Dr. S. Sundaram (Faculty Mentor)',
-    assignedByEmail: 'mentor@college.edu',
+    assignedByRole: 'SUPER_ADMIN',
+    assignedByName: 'College Super Admin Office',
+    assignedByEmail: 'superadmin@college.edu',
     collegeId: 'col-1',
-    targetScope: 'MY_MENTEES',
-    targetDomainOrTrack: 'Assigned Mentees',
+    targetScope: 'DEPARTMENT',
+    targetDomainOrTrack: 'Information Technology, CSE',
+    targetDepartments: ['Computer Science & Engineering', 'Information Technology'],
     listeningPassageId: 'pass-finpay',
     difficulty: 'MEDIUM',
     customInstructions: 'Listen closely to the transaction flow narrative. Pay strict attention to retry timeouts and distributed lock parameters.',
     dueDate: '2026-10-08',
     isMandatory: true,
     createdAt: '2026-09-22',
-    submissions: []
+    submissions: [
+      {
+        studentId: 'stu-21cs1084',
+        studentName: 'Aravind Kumar',
+        studentRollNumber: '21CS1084',
+        score: 82,
+        technicalScore: 85,
+        communicationScore: 80,
+        fluencyScore: 81,
+        department: 'Computer Science & Engineering',
+        sessionType: 'LISTENING_COMPREHENSION',
+        submittedAt: '2026-09-23T11:00:00Z',
+        status: 'COMPLETED',
+        recommendation: 'PLACEMENT_READY'
+      },
+      {
+        studentId: 'stu-21cs1118',
+        studentName: 'Swetha Balan',
+        studentRollNumber: '21CS1118',
+        score: 80,
+        technicalScore: 82,
+        communicationScore: 78,
+        fluencyScore: 80,
+        department: 'Information Technology',
+        sessionType: 'LISTENING_COMPREHENSION',
+        submittedAt: '2026-09-25T15:30:00Z',
+        status: 'COMPLETED',
+        recommendation: 'ON_TRACK'
+      }
+    ]
   },
   {
     id: 'asg-3',
     title: 'Cloud Architecture & Microservices Technical Drill',
     sessionType: 'MOCK_INTERVIEW',
-    assignedByRole: 'TRAINER',
-    assignedByName: 'Vikramaditya Sharma (Visiting Trainer)',
-    assignedByEmail: 'vikram.sharma@techtraining.org',
+    assignedByRole: 'PROGRAM_ADMIN',
+    assignedByName: 'Systems & Cloud Program Lead',
+    assignedByEmail: 'program@college.edu',
     collegeId: 'col-1',
     targetScope: 'PROGRAM',
     targetDomainOrTrack: 'Cloud Computing & DevOps',
+    targetProgramName: 'Cloud Computing & DevOps',
     domainOrTopic: 'Cloud Computing & DevOps',
     difficulty: 'ADVANCED',
     customInstructions: 'Focus on Kafka partition rebalancing, Kubernetes ingress controllers, and zero-downtime rolling deploys.',
     dueDate: '2026-10-10',
     isMandatory: false,
     createdAt: '2026-09-24',
-    submissions: []
+    submissions: [
+      {
+        studentId: 'stu-21cs1092',
+        studentName: 'Pooja Sundaram',
+        studentRollNumber: '21CS1092',
+        score: 89,
+        technicalScore: 90,
+        communicationScore: 88,
+        fluencyScore: 89,
+        department: 'Computer Science & Engineering',
+        sessionType: 'MOCK_INTERVIEW',
+        submittedAt: '2026-09-26T12:00:00Z',
+        status: 'COMPLETED',
+        recommendation: 'PLACEMENT_READY'
+      }
+    ]
   },
   {
     id: 'asg-4',
@@ -386,7 +481,8 @@ export const MOCK_ASSIGNMENTS: InterviewAssignment[] = [
     assignedByName: 'Technical Program Lead',
     assignedByEmail: 'program@college.edu',
     collegeId: 'col-1',
-    targetScope: 'ALL_STUDENTS',
+    targetScope: 'PROGRAM',
+    targetProgramName: 'Institutional Engineering Stream',
     targetDomainOrTrack: 'Institutional Engineering Stream',
     listeningPassageId: 'pass-cybershield',
     difficulty: 'ADVANCED',
@@ -394,21 +490,86 @@ export const MOCK_ASSIGNMENTS: InterviewAssignment[] = [
     dueDate: '2026-10-12',
     isMandatory: true,
     createdAt: '2026-09-25',
-    submissions: []
+    submissions: [
+      {
+        studentId: 'stu-21cs1055',
+        studentName: 'Manoj Kumar V',
+        studentRollNumber: '21CS1055',
+        score: 74,
+        technicalScore: 76,
+        communicationScore: 72,
+        fluencyScore: 75,
+        department: 'Mechanical Engineering',
+        sessionType: 'LISTENING_COMPREHENSION',
+        submittedAt: '2026-09-27T10:15:00Z',
+        status: 'COMPLETED',
+        recommendation: 'ON_TRACK'
+      }
+    ]
+  },
+  {
+    id: 'asg-hope-1',
+    title: 'Hope Fast-Track Technical Readiness Drill',
+    sessionType: 'MOCK_INTERVIEW',
+    assignedByRole: 'PROGRAM_ADMIN',
+    assignedByName: 'Prof. Hope Administrator',
+    assignedByEmail: 'hope@college.edu',
+    collegeId: 'col-1',
+    targetScope: 'PROGRAM',
+    targetProgramName: 'Hope',
+    targetDomainOrTrack: 'Hope',
+    domainOrTopic: 'Full Stack & Advanced Architecture',
+    difficulty: 'ADVANCED',
+    customInstructions: 'Strict candidate technical defense on microservices, event streaming, and architectural trade-offs.',
+    dueDate: '2026-10-14',
+    isMandatory: true,
+    createdAt: '2026-09-28',
+    submissions: [
+      {
+        studentId: 'stu-21cs1084',
+        studentName: 'Aravind Kumar',
+        studentRollNumber: '21CS1084',
+        score: 91,
+        technicalScore: 92,
+        communicationScore: 90,
+        fluencyScore: 91,
+        department: 'Computer Science & Engineering',
+        sessionType: 'MOCK_INTERVIEW',
+        submittedAt: '2026-09-29T11:00:00Z',
+        status: 'COMPLETED',
+        recommendation: 'PLACEMENT_READY'
+      },
+      {
+        studentId: 'stu-21cs1092',
+        studentName: 'Pooja Sundaram',
+        studentRollNumber: '21CS1092',
+        score: 94,
+        technicalScore: 95,
+        communicationScore: 93,
+        fluencyScore: 94,
+        department: 'Computer Science & Engineering',
+        sessionType: 'MOCK_INTERVIEW',
+        submittedAt: '2026-09-29T14:30:00Z',
+        status: 'COMPLETED',
+        recommendation: 'PLACEMENT_READY'
+      }
+    ]
   }
 ];
 
 export const MOCK_MENTEES_LIST = [
-  { id: 'm-1', name: 'Aravind Kumar', rollNumber: '21CS1084', department: 'Computer Science & Engineering', track: 'General Track', domain: 'Full Stack', score: 82, checklist: '4/5', status: 'ON_TRACK' },
-  { id: 'm-2', name: 'Pooja Sundaram', rollNumber: '21CS1092', department: 'Computer Science & Engineering', track: 'General Track', domain: 'AI/ML', score: 88, checklist: '5/5', status: 'PLACEMENT_READY' },
-  { id: 'm-3', name: 'Karthik Raja', rollNumber: '21CS1015', department: 'Information Technology', track: 'General Track', domain: 'Cloud & DevOps', score: 71, checklist: '3/5', status: 'NEEDS_ATTENTION' },
-  { id: 'm-4', name: 'Deepa Natarajan', rollNumber: '21CS1038', department: 'Information Technology', track: 'General Track', domain: 'Cybersecurity', score: 76, checklist: '4/5', status: 'ON_TRACK' },
-  { id: 'm-5', name: 'Manoj Kumar V', rollNumber: '21CS1055', department: 'Mechanical Engineering', track: 'General Track', domain: 'Core Engineering', score: 58, checklist: '2/5', status: 'AT_RISK' },
-  { id: 'm-6', name: 'Sanjay Krishnan', rollNumber: '21CS1102', department: 'Electronics & Communication', track: 'General Track', domain: 'Core Systems', score: 74, checklist: '3/5', status: 'ON_TRACK' },
-  { id: 'm-7', name: 'Swetha Balan', rollNumber: '21CS1118', department: 'Information Technology', track: 'General Track', domain: 'UI/UX Design', score: 79, checklist: '4/5', status: 'ON_TRACK' },
-  { id: 'm-8', name: 'Harish R', rollNumber: '21CS1049', department: 'Computer Science & Engineering', track: 'General Track', domain: 'Software Engineering', score: 64, checklist: '3/5', status: 'NEEDS_ATTENTION' },
-  { id: 'm-9', name: 'Divya Bharathi', rollNumber: '21CS1040', department: 'AI & Data Science', track: 'General Track', domain: 'Data Engineering', score: 84, checklist: '5/5', status: 'PLACEMENT_READY' },
-  { id: 'm-10', name: 'Gowtham S', rollNumber: '21CS1044', department: 'Electronics & Communication', track: 'General Track', domain: 'Problem Solving', score: 69, checklist: '2/5', status: 'NEEDS_ATTENTION' }
+  { id: 'm-1', name: 'Aravind Kumar', rollNumber: '21CS1084', email: 'aravind.k@college.edu', department: 'Computer Science & Engineering', className: 'Final Year CSE - Placement Core', batchYear: 2026, track: 'Hope', programName: 'Hope', programId: 'prog-hope', domain: 'Full Stack', score: 82, checklist: '4/5', status: 'ON_TRACK', coins: 5 },
+  { id: 'm-2', name: 'Pooja Sundaram', rollNumber: '21CS1092', email: 'pooja.s@college.edu', department: 'Computer Science & Engineering', className: 'Final Year CSE - Placement Core', batchYear: 2026, track: 'Hope', programName: 'Hope', programId: 'prog-hope', domain: 'AI/ML', score: 88, checklist: '5/5', status: 'PLACEMENT_READY', coins: 5 },
+  { id: 'm-3', name: 'Karthik Raja', rollNumber: '21CS1015', email: 'karthik.r@college.edu', department: 'Information Technology', className: '2nd Year IT - Section A', batchYear: 2027, track: 'Cloud Computing & DevOps', programName: 'Cloud Computing & DevOps', programId: 'prog-ccdo', domain: 'Cloud & DevOps', score: 71, checklist: '3/5', status: 'NEEDS_ATTENTION', coins: 5 },
+  { id: 'm-4', name: 'Deepa Natarajan', rollNumber: '21CS1038', email: 'deepa.n@college.edu', department: 'Information Technology', className: '2nd Year IT - Section A', batchYear: 2027, track: 'DEPARTMENT', domain: 'Cybersecurity', score: 76, checklist: '4/5', status: 'ON_TRACK', coins: 5 },
+  { id: 'm-5', name: 'Manoj Kumar V', rollNumber: '21CS1055', email: 'manoj.k@college.edu', department: 'Mechanical Engineering', className: '3rd Year Mechanical - A', batchYear: 2027, track: 'Institutional Engineering Stream', programName: 'Institutional Engineering Stream', programId: 'prog-ies', domain: 'Core Engineering', score: 58, checklist: '2/5', status: 'AT_RISK', coins: 5 },
+  { id: 'm-6', name: 'Sanjay Krishnan', rollNumber: '21CS1102', email: 'sanjay.k@college.edu', department: 'Electronics & Communication', className: 'Final Year ECE - Core', batchYear: 2026, track: 'Hope', programName: 'Hope', programId: 'prog-hope', domain: 'Core Systems', score: 74, checklist: '3/5', status: 'ON_TRACK', coins: 5 },
+  { id: 'm-7', name: 'Swetha Balan', rollNumber: '21CS1118', email: 'swetha.b@college.edu', department: 'Information Technology', className: '3rd Year IT - Section B', batchYear: 2026, track: 'DEPARTMENT', domain: 'UI/UX Design', score: 79, checklist: '4/5', status: 'ON_TRACK', coins: 5 },
+  { id: 'm-8', name: 'Harish R', rollNumber: '21CS1049', email: 'harish.r@college.edu', department: 'Computer Science & Engineering', className: 'Final Year CSE - Placement Core', batchYear: 2026, track: 'DEPARTMENT', domain: 'Software Engineering', score: 64, checklist: '3/5', status: 'NEEDS_ATTENTION', coins: 5 },
+  { id: 'm-9', name: 'Divya Bharathi', rollNumber: '21CS1040', email: 'divya.b@college.edu', department: 'Artificial Intelligence & Data Science', className: '3rd Year AIDS - Alpha', batchYear: 2027, track: 'Hope', programName: 'Hope', programId: 'prog-hope', domain: 'Data Engineering', score: 84, checklist: '5/5', status: 'PLACEMENT_READY', coins: 5 },
+  { id: 'm-10', name: 'Gowtham S', rollNumber: '21CS1044', email: 'gowtham.s@college.edu', department: 'Electronics & Communication', className: '2nd Year ECE - Section B', batchYear: 2028, track: 'DEPARTMENT', domain: 'Problem Solving', score: 69, checklist: '2/5', status: 'NEEDS_ATTENTION', coins: 5 },
+  { id: 'm-11', name: 'Priya Sundaram', rollNumber: '21IT1001', email: 'priya.s@college.edu', department: 'Information Technology', className: '2nd Year IT - Section A', batchYear: 2027, track: 'DEPARTMENT', domain: 'Distributed Systems', score: 83, checklist: '4/5', status: 'PLACEMENT_READY', coins: 5 },
+  { id: 'm-12', name: 'Rahul Menon', rollNumber: '21IT1002', email: 'rahul.m@college.edu', department: 'Information Technology', className: '2nd Year IT - Section A', batchYear: 2027, track: 'Cloud Computing & DevOps', domain: 'Microservices', score: 75, checklist: '3/5', status: 'ON_TRACK', coins: 5 }
 ];
 
 export const MOCK_COLLEGES = [
@@ -492,32 +653,176 @@ export const MOCK_DYNAMIC_DEPARTMENTS = [
   }
 ];
 
-export const MOCK_DYNAMIC_PROGRAMS: DynamicProgram[] = [];
+export const MOCK_DYNAMIC_PROGRAMS: DynamicProgram[] = [
+  {
+    id: 'prog-hope',
+    collegeId: 'col-1',
+    name: 'Hope',
+    code: 'HOPE',
+    description: 'High-potential Opportunistic Placement & Employability acceleration program for top campus candidates.',
+    assignedAdminEmail: 'hope@college.edu',
+    assignedAdminName: 'Prof. Hope Administrator',
+    hasSubPrograms: false,
+    adminPermissions: ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING', 'CAN_MANAGE_STUDENTS'],
+    createdAt: '2026-02-15'
+  },
+  {
+    id: 'prog-ccdo',
+    collegeId: 'col-1',
+    name: 'Cloud Computing & DevOps',
+    code: 'CCDO',
+    description: 'Full Stack Cloud Architecture, Microservices, and Infrastructure as Code readiness track.',
+    assignedAdminEmail: 'admin.cloud@college.edu',
+    assignedAdminName: 'Prof. S. Ranganathan',
+    hasSubPrograms: true,
+    subPrograms: ['Microservices Architecture', 'Kubernetes & CI/CD'],
+    adminPermissions: ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING', 'CAN_MANAGE_STUDENTS'],
+    createdAt: '2026-01-20'
+  },
+  {
+    id: 'prog-ies',
+    collegeId: 'col-1',
+    name: 'Institutional Engineering Stream',
+    code: 'IES',
+    description: 'Core Systems, Embedded Systems, Network Security & Zero-Trust Architecture track.',
+    assignedAdminEmail: 'admin.ies@college.edu',
+    assignedAdminName: 'Dr. V. Ramanathan',
+    hasSubPrograms: false,
+    adminPermissions: ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING'],
+    createdAt: '2026-02-10'
+  }
+];
 
 export const ADMIN_PERMISSION_LABELS: Record<string, { label: string; desc: string }> = {
   'CAN_VIEW_STUDENT_PROGRESS': {
     label: 'View Students’ Progress',
-    desc: 'Access live diagnostic reports, telemetry, WPM scores, and filler word analytics.'
+    desc: 'Access live performance reports, speaking speed (WPM), and filler word analytics.'
   },
   'CAN_ASSIGN_INTERVIEWS': {
     label: 'Assign Mock Technical Interviews',
-    desc: 'Schedule and mandate AI mock interview sessions with deadlines for candidates.'
+    desc: 'Schedule and assign AI mock interview practice sessions with deadlines for students.'
   },
   'CAN_ASSIGN_LISTENING': {
     label: 'Assign Listening Labs',
-    desc: 'Curate and assign multi-speaker audio listening comprehension lab sessions.'
-  },
-  'CAN_ASSIGN_TRAINERS': {
-    label: 'Assign Domain Trainers',
-    desc: 'Onboard and assign visiting industry trainers to specific programs or common tracks.'
+    desc: 'Assign audio listening comprehension practice sessions to students.'
   },
   'CAN_MANAGE_STUDENTS': {
-    label: 'Manage Students & Scrutiny',
-    desc: 'Enroll students, allocate tracks/sub-programs, and verify placement criteria.'
-  },
-  'CAN_ASSIGN_SUB_ADMINS': {
-    label: 'Assign Admins to Other Programs',
-    desc: 'Delegate administrative privileges to sub-programs or cross-program leads.'
+    label: 'Manage Students & Program Assignment',
+    desc: 'Enroll students, assign tracks/programs, and verify placement checklist.'
   }
 };
+
+export const MOCK_DEPARTMENT_CLASSES: any[] = [
+  {
+    id: 'cls-it-2a',
+    name: '2nd Year IT - Section A',
+    department: 'Information Technology',
+    batchYear: 2027,
+    semester: 'Semester 4',
+    facultyInCharge: 'Dr. B. Vijayalakshmi',
+    enrolledStudentCount: 42,
+    createdAt: '2026-02-01'
+  },
+  {
+    id: 'cls-it-3b',
+    name: '3rd Year IT - Section B',
+    department: 'Information Technology',
+    batchYear: 2026,
+    semester: 'Semester 6',
+    facultyInCharge: 'Prof. K. Venkatesh',
+    enrolledStudentCount: 38,
+    createdAt: '2026-02-05'
+  },
+  {
+    id: 'cls-cse-final',
+    name: 'Final Year CSE - Placement Core',
+    department: 'Computer Science & Engineering',
+    batchYear: 2026,
+    semester: 'Semester 8',
+    facultyInCharge: 'Dr. A. Murugan',
+    enrolledStudentCount: 56,
+    createdAt: '2026-01-20'
+  }
+];
+
+export const MOCK_DEPARTMENT_STAFF: any[] = [
+  {
+    id: 'staff-it-01',
+    name: 'Dr. B. Vijayalakshmi',
+    email: 'counselor.it@college.edu',
+    designation: 'Associate Professor & Class Counselor',
+    staffId: 'IT-FAC-001',
+    department: 'Information Technology',
+    collegeId: 'col-1',
+    status: 'ACTIVE',
+    activationToken: 'act_token_it_01',
+    assignedClasses: ['2nd Year IT - Section A'],
+    createdAt: '2026-01-15'
+  },
+  {
+    id: 'staff-it-02',
+    name: 'Prof. K. Venkatesh',
+    email: 'venkatesh.k@college.edu',
+    designation: 'Senior Assistant Professor',
+    staffId: 'IT-FAC-002',
+    department: 'Information Technology',
+    collegeId: 'col-1',
+    status: 'ACTIVE',
+    activationToken: 'act_token_it_02',
+    assignedClasses: ['3rd Year IT - Section B'],
+    createdAt: '2026-01-20'
+  },
+  {
+    id: 'staff-it-03',
+    name: 'Dr. S. Ranganathan',
+    email: 'ranganathan.s@college.edu',
+    designation: 'Professor & Research Mentor',
+    staffId: 'IT-FAC-003',
+    department: 'Information Technology',
+    collegeId: 'col-1',
+    status: 'ACTIVE',
+    activationToken: 'act_token_it_03',
+    assignedClasses: [],
+    createdAt: '2026-02-01'
+  },
+  {
+    id: 'staff-it-04',
+    name: 'Dr. Ananya Sharma',
+    email: 'ananya.sharma@college.edu',
+    designation: 'Assistant Professor',
+    staffId: 'IT-FAC-004',
+    department: 'Information Technology',
+    collegeId: 'col-1',
+    status: 'ACTIVE',
+    activationToken: 'act_token_it_04',
+    assignedClasses: [],
+    createdAt: '2026-03-01'
+  },
+  {
+    id: 'staff-cse-01',
+    name: 'Dr. A. Murugan',
+    email: 'admin.cse@college.edu',
+    designation: 'Professor & Class Counselor',
+    staffId: 'CSE-FAC-001',
+    department: 'Computer Science & Engineering',
+    collegeId: 'col-1',
+    status: 'ACTIVE',
+    activationToken: 'act_token_cse_01',
+    assignedClasses: ['Final Year CSE - Placement Core'],
+    createdAt: '2026-01-10'
+  },
+  {
+    id: 'staff-cse-02',
+    name: 'Dr. Kavitha Raman',
+    email: 'kavitha.r@college.edu',
+    designation: 'Associate Professor',
+    staffId: 'CSE-FAC-002',
+    department: 'Computer Science & Engineering',
+    collegeId: 'col-1',
+    status: 'ACTIVE',
+    activationToken: 'act_token_cse_02',
+    assignedClasses: [],
+    createdAt: '2026-02-15'
+  }
+];
 

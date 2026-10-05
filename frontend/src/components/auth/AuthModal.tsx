@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
-import { PendingInvite } from '../../types';
+import { BrandIcon } from '../common/BrandLogo';
 import { 
   X, 
   Lock, 
@@ -11,24 +11,30 @@ import {
   AlertCircle, 
   CheckCircle2, 
   KeyRound, 
-  Building2, 
-  ShieldCheck,
   ArrowRight,
-  Zap
+  Eye,
+  EyeOff,
+  Building2,
+  MapPin,
+  Phone
 } from 'lucide-react';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 export const AuthModal: React.FC = () => {
   const { 
     authModalOpen, 
     authModalMode, 
     closeAuthModal, 
-    openAuthModal, 
     loginUser, 
+    loginWithAuthUser,
     registerCandidate,
-    completeInviteActivation
+    registerInstitution,
+    setActiveView
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'LOGIN' | 'REGISTER' | 'INVITE'>('LOGIN');
+  useBackHandler(authModalOpen, closeAuthModal);
+
+  const [activeTab, setActiveTab] = useState<'LOGIN' | 'REGISTER' | 'FORGOT_PASSWORD' | 'REGISTER_INSTITUTION'>('LOGIN');
 
   // Sign in state
   const [email, setEmail] = useState('');
@@ -38,15 +44,30 @@ export const AuthModal: React.FC = () => {
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regDepartment, setRegDepartment] = useState('Computer Science & Engineering');
-  const [regBatchYear, setRegBatchYear] = useState(2026);
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
-  // Invite activation state
-  const [inviteToken, setInviteToken] = useState('');
-  const [inviteDetails, setInviteDetails] = useState<PendingInvite | null>(null);
-  const [invitePassword, setInvitePassword] = useState('');
-  const [inviteConfirmPassword, setInviteConfirmPassword] = useState('');
-  const [tokenSearching, setTokenSearching] = useState(false);
+  // Institution Registration State
+  const [instName, setInstName] = useState('');
+  const [instCode, setInstCode] = useState('');
+  const [instCity, setInstCity] = useState('');
+  const [instAdminName, setInstAdminName] = useState('');
+  const [instAdminEmail, setInstAdminEmail] = useState('');
+  const [instPassword, setInstPassword] = useState('');
+  const [showInstPassword, setShowInstPassword] = useState(false);
+  const [instConfirmPassword, setInstConfirmPassword] = useState('');
+  const [showInstConfirmPassword, setShowInstConfirmPassword] = useState(false);
+  const [instPhone, setInstPhone] = useState('');
+
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotStep, setForgotStep] = useState<'REQUEST_OTP' | 'VERIFY_AND_RESET'>('REQUEST_OTP');
+  const [simulatedOtp, setSimulatedOtp] = useState<string | null>(null);
+  const [showForgotPwd, setShowForgotPwd] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,43 +75,14 @@ export const AuthModal: React.FC = () => {
 
   // Sync mode from context
   useEffect(() => {
-    if (authModalMode === 'register') {
+    if (authModalMode === 'register_institution') {
+      setActiveTab('REGISTER_INSTITUTION');
+    } else if (authModalMode === 'register') {
       setActiveTab('REGISTER');
-    } else if (activeTab !== 'INVITE') {
+    } else if (activeTab !== 'FORGOT_PASSWORD') {
       setActiveTab('LOGIN');
     }
   }, [authModalMode]);
-
-  // Check URL params for invite_token
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('invite_token');
-    if (token) {
-      setInviteToken(token);
-      setActiveTab('INVITE');
-      openAuthModal('login');
-      lookupToken(token);
-    }
-  }, []);
-
-  const lookupToken = async (tokenStr: string) => {
-    if (!tokenStr.trim()) return;
-    setTokenSearching(true);
-    setError(null);
-    try {
-      const inv = await api.invites.getByToken(tokenStr.trim());
-      if (inv) {
-        setInviteDetails(inv);
-      } else {
-        setError('Invite link is invalid or may have expired.');
-        setInviteDetails(null);
-      }
-    } catch {
-      setError('Unable to resolve invite link.');
-    } finally {
-      setTokenSearching(false);
-    }
-  };
 
   if (!authModalOpen) return null;
 
@@ -107,24 +99,18 @@ export const AuthModal: React.FC = () => {
     }
   };
 
-  const handleQuickDemoLogin = async (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('demo123');
-    setError(null);
-    setLoading(true);
-    try {
-      await loginUser(demoEmail, 'demo123');
-    } catch (err: any) {
-      setError(err?.message || 'Quick login failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRegisterCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regName.trim() || !regEmail.trim() || !regPassword.trim()) {
       setError('Please fill in your name, email, and password.');
+      return;
+    }
+    if (regPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setError('Passwords do not match. Please re-enter your confirm password.');
       return;
     }
     setError(null);
@@ -142,22 +128,89 @@ export const AuthModal: React.FC = () => {
     }
   };
 
-  const handleCompleteActivation = async (e: React.FormEvent) => {
+  const handleRegisterInstitution = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!invitePassword || invitePassword.length < 6) {
+    if (!instName.trim() || !instCode.trim() || !instCity.trim() || !instAdminName.trim() || !instAdminEmail.trim()) {
+      setError('Please fill in all required institution and administrator fields.');
+      return;
+    }
+    if (!instPassword || instPassword.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
     }
-    if (invitePassword !== inviteConfirmPassword) {
+    if (instPassword !== instConfirmPassword) {
+      setError('Passwords do not match. Please re-enter your confirm password.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      await registerInstitution({
+        institutionName: instName.trim(),
+        institutionCode: instCode.trim(),
+        campusCity: instCity.trim(),
+        adminName: instAdminName.trim(),
+        adminEmail: instAdminEmail.trim(),
+        password: instPassword,
+        contactPhone: instPhone.trim() || undefined
+      });
+      closeAuthModal();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to register institution. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setError('Please enter your registered email address.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.auth.requestPasswordReset(forgotEmail.trim());
+      setSimulatedOtp(res.otp);
+      setForgotStep('VERIFY_AND_RESET');
+      setSuccessMsg(`Verification code generated for ${res.email}.`);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to request password reset code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotOtp.trim()) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+    if (!forgotNewPassword || forgotNewPassword.length < 6) {
+      setError('New password must be at least 6 characters.');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
       setError('Passwords do not match.');
       return;
     }
     setError(null);
     setLoading(true);
     try {
-      await completeInviteActivation(inviteToken.trim(), invitePassword);
+      const res = await api.auth.resetPassword({
+        email: forgotEmail.trim(),
+        otp: forgotOtp.trim(),
+        newPassword: forgotNewPassword
+      });
+      setSuccessMsg('Password updated successfully! Logging you in...');
+      setTimeout(() => {
+        loginWithAuthUser(res.user, res.token);
+        closeAuthModal();
+      }, 700);
     } catch (err: any) {
-      setError(err?.message || 'Failed to activate account. The link may be expired.');
+      setError(err?.message || 'Failed to reset password. Please check your verification code.');
     } finally {
       setLoading(false);
     }
@@ -165,24 +218,29 @@ export const AuthModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-      <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
+      <div className="bg-white border border-neutral-200 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
         
         {/* Modal Header */}
         <div className="p-5 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/70 shrink-0">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="w-2 h-2 rounded-full bg-neutral-900" />
-              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">
-                {activeTab === 'LOGIN' && 'Portal Sign In'}
-                {activeTab === 'REGISTER' && 'Candidate Self-Registration'}
-                {activeTab === 'INVITE' && 'Admin Account Activation'}
-              </h3>
+          <div className="flex items-center space-x-3.5">
+            <BrandIcon size="md" />
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className={`w-2 h-2 rounded-full ${activeTab === 'REGISTER_INSTITUTION' ? 'bg-blue-600' : 'bg-neutral-900'}`} />
+                <h3 className="text-sm font-semibold tracking-tight text-neutral-900">
+                  {activeTab === 'LOGIN' && 'Portal Sign In'}
+                  {activeTab === 'REGISTER' && 'Candidate Self-Registration'}
+                  {activeTab === 'REGISTER_INSTITUTION' && 'Register Your Institution'}
+                  {activeTab === 'FORGOT_PASSWORD' && 'Reset Account Password'}
+                </h3>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                {activeTab === 'LOGIN' && 'Access your institutional dashboard or independent candidate studio.'}
+                {activeTab === 'REGISTER' && 'Open registration for self-paced mock interviews & listening comprehension.'}
+                {activeTab === 'REGISTER_INSTITUTION' && 'Self-serve college onboarding for Deans, Principals & Academic Directors.'}
+                {activeTab === 'FORGOT_PASSWORD' && 'Universal account recovery for students, faculty staff, counsellors & administrators.'}
+              </p>
             </div>
-            <p className="text-xs text-neutral-500 mt-0.5">
-              {activeTab === 'LOGIN' && 'Access your institutional dashboard or independent candidate studio.'}
-              {activeTab === 'REGISTER' && 'Open registration for self-paced mock interviews & listening comprehension.'}
-              {activeTab === 'INVITE' && 'Set your private password using your invitation activation token.'}
-            </p>
           </div>
           <button 
             onClick={closeAuthModal}
@@ -193,10 +251,10 @@ export const AuthModal: React.FC = () => {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-neutral-200 px-6 pt-3 bg-white shrink-0 space-x-6 text-xs font-medium">
+        <div className="flex border-b border-neutral-200 px-6 pt-3 bg-white shrink-0 space-x-4 sm:space-x-6 text-xs font-medium overflow-x-auto">
           <button
-            onClick={() => { setActiveTab('LOGIN'); setError(null); }}
-            className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
+            onClick={() => { setActiveTab('LOGIN'); setError(null); setSuccessMsg(null); }}
+            className={`pb-2.5 border-b-2 transition-colors cursor-pointer shrink-0 ${
               activeTab === 'LOGIN' 
                 ? 'border-neutral-900 text-neutral-900 font-semibold' 
                 : 'border-transparent text-neutral-500 hover:text-neutral-800'
@@ -205,38 +263,47 @@ export const AuthModal: React.FC = () => {
             Sign In
           </button>
           <button
-            onClick={() => { setActiveTab('REGISTER'); setError(null); }}
-            className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
+            onClick={() => { setActiveTab('REGISTER'); setError(null); setSuccessMsg(null); }}
+            className={`pb-2.5 border-b-2 transition-colors cursor-pointer shrink-0 ${
               activeTab === 'REGISTER' 
                 ? 'border-neutral-900 text-neutral-900 font-semibold' 
                 : 'border-transparent text-neutral-500 hover:text-neutral-800'
             }`}
           >
-            Candidate Registration
+            Student Sign Up
           </button>
           <button
-            onClick={() => { setActiveTab('INVITE'); setError(null); }}
-            className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'INVITE' 
+            onClick={() => { setActiveTab('REGISTER_INSTITUTION'); setError(null); setSuccessMsg(null); }}
+            className={`pb-2.5 border-b-2 transition-colors cursor-pointer shrink-0 flex items-center space-x-1.5 ${
+              activeTab === 'REGISTER_INSTITUTION' 
                 ? 'border-neutral-900 text-neutral-900 font-semibold' 
                 : 'border-transparent text-neutral-500 hover:text-neutral-800'
             }`}
           >
-            Activate Invite
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Register Institution</span>
           </button>
+          {activeTab === 'FORGOT_PASSWORD' && (
+            <button
+              onClick={() => { setActiveTab('FORGOT_PASSWORD'); setError(null); }}
+              className="pb-2.5 border-b-2 border-neutral-900 text-neutral-900 font-semibold cursor-pointer shrink-0"
+            >
+              Reset Password
+            </button>
+          )}
         </div>
 
         {/* Body Content */}
         <div className="p-6 space-y-4 overflow-y-auto">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2 animate-in fade-in duration-150">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           {successMsg && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start space-x-2">
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start space-x-2 animate-in fade-in duration-150">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
               <span>{successMsg}</span>
             </div>
@@ -255,14 +322,29 @@ export const AuthModal: React.FC = () => {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="e.g. owner@platform.com or admin@college.edu"
+                      placeholder="name@college.edu or name@example.com"
                       className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Password</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-neutral-700">Password</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotEmail(email);
+                        setActiveTab('FORGOT_PASSWORD');
+                        setForgotStep('REQUEST_OTP');
+                        setError(null);
+                        setSuccessMsg(null);
+                      }}
+                      className="text-[11px] text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
                     <input
@@ -292,61 +374,31 @@ export const AuthModal: React.FC = () => {
                 </button>
               </form>
 
-              {/* Quick Demo Logins Box */}
-              <div className="pt-3 border-t border-neutral-100 space-y-2">
-                <div className="flex items-center space-x-1.5 text-neutral-500 text-[11px] font-medium">
-                  <Zap className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Instant Demo Logins (Click to Test):</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDemoLogin('owner@platform.com')}
-                    className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-left transition-colors cursor-pointer group"
-                  >
-                    <p className="font-semibold text-neutral-900 group-hover:text-black flex items-center justify-between">
-                      <span>🌐 Platform Owner</span>
-                      <ArrowRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-                    </p>
-                    <p className="text-[10px] text-neutral-400 font-mono mt-0.5 truncate">owner@platform.com</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDemoLogin('superadmin@college.edu')}
-                    className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-left transition-colors cursor-pointer group"
-                  >
-                    <p className="font-semibold text-neutral-900 group-hover:text-black flex items-center justify-between">
-                      <span>🏛️ College Super Admin</span>
-                      <ArrowRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-                    </p>
-                    <p className="text-[10px] text-neutral-400 font-mono mt-0.5 truncate">superadmin@college.edu</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDemoLogin('program@college.edu')}
-                    className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-left transition-colors cursor-pointer group"
-                  >
-                    <p className="font-semibold text-neutral-900 group-hover:text-black flex items-center justify-between">
-                      <span>🏢 Program Admin</span>
-                      <ArrowRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-                    </p>
-                    <p className="text-[10px] text-neutral-400 font-mono mt-0.5 truncate">program@college.edu</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDemoLogin('candidate@example.com')}
-                    className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-left transition-colors cursor-pointer group"
-                  >
-                    <p className="font-semibold text-neutral-900 group-hover:text-black flex items-center justify-between">
-                      <span>🎯 Independent Candidate</span>
-                      <ArrowRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-                    </p>
-                    <p className="text-[10px] text-neutral-400 font-mono mt-0.5 truncate">candidate@example.com</p>
-                  </button>
-                </div>
+              {/* Institution Self-Service Registration Banner */}
+              <div className="pt-2 border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('REGISTER_INSTITUTION');
+                    setError(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="w-full p-3 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-2xl text-left transition-all cursor-pointer flex items-center justify-between group shadow-2xs"
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center shrink-0">
+                      <Building2 className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-neutral-900">Representing a College or University?</p>
+                      <p className="text-[11px] text-neutral-500">Register your institution &amp; start as Super Admin</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-1 text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+                    <span>Register</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                </button>
               </div>
             </div>
           )}
@@ -368,7 +420,7 @@ export const AuthModal: React.FC = () => {
                     required
                     value={regName}
                     onChange={(e) => setRegName(e.target.value)}
-                    placeholder="e.g. Danish Basha"
+                    placeholder="Full name"
                     className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
                   />
                 </div>
@@ -383,7 +435,7 @@ export const AuthModal: React.FC = () => {
                     required
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="candidate@example.com"
+                    placeholder="name@example.com"
                     className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
                   />
                 </div>
@@ -394,40 +446,44 @@ export const AuthModal: React.FC = () => {
                 <div className="relative">
                   <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
                   <input
-                    type="password"
+                    type={showRegPassword ? 'text' : 'password'}
                     required
+                    minLength={6}
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="Min 6 characters"
-                    className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                    placeholder="At least 6 characters"
+                    className="w-full pl-9 pr-9 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword(!showRegPassword)}
+                    className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                  >
+                    {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Discipline / Branch</label>
-                  <select
-                    value={regDepartment}
-                    onChange={(e) => setRegDepartment(e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
-                  >
-                    <option value="Computer Science & Engineering">CSE</option>
-                    <option value="Information Technology">IT</option>
-                    <option value="AI & Data Science">AIDS</option>
-                    <option value="Electronics & Communication">ECE</option>
-                    <option value="Independent Study">Independent Study</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Batch Year</label>
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">Confirm Password *</label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
                   <input
-                    type="number"
-                    value={regBatchYear}
-                    onChange={(e) => setRegBatchYear(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors font-mono"
+                    type={showRegConfirmPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    placeholder="Re-type your password"
+                    className="w-full pl-9 pr-9 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                    className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                  >
+                    {showRegConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
               </div>
 
@@ -442,114 +498,31 @@ export const AuthModal: React.FC = () => {
                     <span>Creating your Studio Account...</span>
                   </>
                 ) : (
-                  <span>Register & Launch Practice</span>
+                  <span>Register &amp; Launch Practice</span>
                 )}
               </button>
             </form>
           )}
 
-          {/* TAB 3: INVITE ACTIVATION */}
-          {activeTab === 'INVITE' && (
+          {/* TAB 3: UNIVERSAL FORGOT PASSWORD */}
+          {activeTab === 'FORGOT_PASSWORD' && (
             <div className="space-y-4">
-              {!inviteDetails ? (
-                <div className="space-y-3.5">
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 leading-relaxed">
-                    <strong>College Super Admin &amp; Program Admin Activation:</strong>
-                    <br />
-                    The Platform Owner and Super Admins assign no initial passwords. Enter your invitation token or open the link received in your activation email.
-                  </div>
+              <div className="p-3.5 bg-neutral-50 border border-neutral-200 rounded-xl text-[11px] text-neutral-600 leading-relaxed">
+                <strong>Universal Account Recovery:</strong> Enter your registered email address (students, faculty staff, counsellors, or administrators). We will issue a 6-digit verification code to securely reset your password.
+              </div>
 
+              {forgotStep === 'REQUEST_OTP' ? (
+                <form onSubmit={handleRequestPasswordReset} className="space-y-3.5">
                   <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">Invitation Token / Code</label>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Registered Email Address *</label>
                     <div className="relative">
-                      <KeyRound className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                      <Mail className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
                       <input
-                        type="text"
-                        value={inviteToken}
-                        onChange={(e) => setInviteToken(e.target.value)}
-                        placeholder="e.g. inv_sup_174000..."
-                        className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-mono focus:outline-none focus:border-neutral-900 transition-colors"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={tokenSearching || !inviteToken.trim()}
-                    onClick={() => lookupToken(inviteToken)}
-                    className="w-full bg-neutral-900 hover:bg-black text-white text-xs font-medium py-2.5 rounded-xl transition-all shadow-xs disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
-                  >
-                    {tokenSearching ? (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                        <span>Resolving Invitation...</span>
-                      </>
-                    ) : (
-                      <span>Verify &amp; Load Invitation</span>
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleCompleteActivation} className="space-y-4">
-                  {/* Verified Invite Card */}
-                  <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-emerald-950 flex items-center space-x-1.5">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        <span>Valid Invitation Confirmed</span>
-                      </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-900 font-mono">
-                        {inviteDetails.role}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-emerald-200/60 text-[11px]">
-                      <div>
-                        <span className="text-emerald-700 block">Assigned College:</span>
-                        <span className="font-medium text-emerald-950 font-semibold">{inviteDetails.collegeName || 'Institution'}</span>
-                      </div>
-                      <div>
-                        <span className="text-emerald-700 block">Designated Admin:</span>
-                        <span className="font-medium text-emerald-950">{inviteDetails.name}</span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-emerald-700 block">Strict User ID (College Email):</span>
-                        <span className="font-mono text-emerald-900 bg-white px-2 py-0.5 rounded border border-emerald-200 inline-block mt-0.5">
-                          {inviteDetails.email}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-neutral-500">
-                    The Platform Owner never sets your password. Please establish your own private password to complete account activation:
-                  </p>
-
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">Create Private Password *</label>
-                    <div className="relative">
-                      <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
-                      <input
-                        type="password"
+                        type="email"
                         required
-                        value={invitePassword}
-                        onChange={(e) => setInvitePassword(e.target.value)}
-                        placeholder="At least 6 characters"
-                        className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">Confirm Password *</label>
-                    <div className="relative">
-                      <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
-                      <input
-                        type="password"
-                        required
-                        value={inviteConfirmPassword}
-                        onChange={(e) => setInviteConfirmPassword(e.target.value)}
-                        placeholder="Re-type your password"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="e.g. staff@college.edu or student@college.edu"
                         className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
                       />
                     </div>
@@ -557,54 +530,328 @@ export const AuthModal: React.FC = () => {
 
                   <button
                     type="submit"
-                    disabled={loading}
-                    className="w-full bg-neutral-900 hover:bg-black text-white text-xs font-medium py-2.5 rounded-xl transition-all shadow-xs disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
+                    disabled={loading || !forgotEmail.trim()}
+                    className="w-full bg-neutral-900 hover:bg-black text-white text-xs font-semibold py-2.5 rounded-xl transition-all shadow-xs disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
                   >
                     {loading ? (
                       <>
                         <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                        <span>Activating Administrator Account...</span>
+                        <span>Generating Verification Code...</span>
                       </>
                     ) : (
-                      <span>Complete Activation &amp; Launch Portal</span>
+                      <span>Send Password Reset Code</span>
                     )}
                   </button>
 
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTab('LOGIN'); setError(null); setSuccessMsg(null); }}
+                      className="text-xs text-neutral-500 hover:text-neutral-900 cursor-pointer"
+                    >
+                      ← Remember your password? Back to Sign In
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleResetPasswordSubmit} className="space-y-3.5">
+                  {simulatedOtp && (
+                    <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-800 flex items-center justify-between">
+                      <span className="font-medium text-[11px] text-neutral-600">Verification Code:</span>
+                      <span className="font-mono text-xs font-bold bg-neutral-200 text-neutral-900 px-2 py-0.5 rounded">
+                        {simulatedOtp}
+                      </span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Email</label>
+                    <input
+                      type="email"
+                      disabled
+                      value={forgotEmail}
+                      className="w-full px-3 py-2 bg-neutral-100 border border-neutral-200 rounded-xl text-xs text-neutral-600 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">6-Digit Verification Code *</label>
+                    <div className="relative">
+                      <KeyRound className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                      <input
+                        type="text"
+                        required
+                        maxLength={6}
+                        value={forgotOtp}
+                        onChange={(e) => setForgotOtp(e.target.value)}
+                        placeholder="e.g. 123456"
+                        className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-mono text-neutral-900 focus:outline-none focus:border-neutral-900 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">New Password *</label>
+                    <div className="relative">
+                      <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                      <input
+                        type={showForgotPwd ? 'text' : 'password'}
+                        required
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        className="w-full pl-9 pr-10 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotPwd(!showForgotPwd)}
+                        className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                      >
+                        {showForgotPwd ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Confirm New Password *</label>
+                    <div className="relative">
+                      <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                      <input
+                        type={showForgotPwd ? 'text' : 'password'}
+                        required
+                        value={forgotConfirmPassword}
+                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                        placeholder="Re-type your new password"
+                        className="w-full pl-9 pr-10 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                      />
+                    </div>
+                  </div>
+
                   <button
-                    type="button"
-                    onClick={() => { setInviteDetails(null); setInviteToken(''); }}
-                    className="w-full text-center text-xs text-neutral-500 hover:text-neutral-900 py-1"
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-neutral-900 hover:bg-black text-white text-xs font-semibold py-2.5 rounded-xl transition-all shadow-xs disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
                   >
-                    ← Enter a different invitation token
+                    {loading ? (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                        <span>Updating Password &amp; Signing In...</span>
+                      </>
+                    ) : (
+                      <span>Reset Password &amp; Launch Studio</span>
+                    )}
                   </button>
+
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => { setForgotStep('REQUEST_OTP'); setError(null); }}
+                      className="text-neutral-500 hover:text-neutral-900 cursor-pointer"
+                    >
+                      ← Request a different code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTab('LOGIN'); setError(null); }}
+                      className="text-neutral-500 hover:text-neutral-900 cursor-pointer font-medium"
+                    >
+                      Back to Sign In
+                    </button>
+                  </div>
                 </form>
               )}
             </div>
           )}
 
+          {/* TAB 4: REGISTER INSTITUTION */}
+          {activeTab === 'REGISTER_INSTITUTION' && (
+            <form onSubmit={handleRegisterInstitution} className="space-y-4">
+              <div className="p-3.5 bg-neutral-50 border border-neutral-200 rounded-2xl text-xs text-neutral-900 space-y-1">
+                <div className="flex items-center space-x-2 font-bold text-neutral-900">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <span>Institutional Self-Serve Onboarding</span>
+                </div>
+                <p className="text-[11px] text-neutral-500 leading-relaxed">
+                  Register your college or university to immediately unlock dedicated tenant databases, pre-configured foundational departments (CSE, IT, ECE), and full Super Administrator portal privileges.
+                </p>
+              </div>
+
+              {/* Institution Information */}
+              <div className="space-y-3">
+                <p className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">1. Institution Details</p>
+                
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">Institution / College Name *</label>
+                  <div className="relative">
+                    <Building2 className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                    <input
+                      type="text"
+                      required
+                      value={instName}
+                      onChange={(e) => setInstName(e.target.value)}
+                      placeholder="College or University name"
+                      className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Short Code *</label>
+                    <input
+                      type="text"
+                      required
+                      value={instCode}
+                      onChange={(e) => setInstCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. MIT"
+                      className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-mono uppercase focus:outline-none focus:border-neutral-900 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Campus City / Location *</label>
+                    <div className="relative">
+                      <MapPin className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                      <input
+                        type="text"
+                        required
+                        value={instCity}
+                        onChange={(e) => setInstCity(e.target.value)}
+                        placeholder="City, State"
+                        className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Administrator Information */}
+              <div className="space-y-3 pt-2 border-t border-neutral-100">
+                <p className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">2. Super Administrator Credentials</p>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">Principal / Dean / Admin Full Name *</label>
+                  <div className="relative">
+                    <User className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                    <input
+                      type="text"
+                      required
+                      value={instAdminName}
+                      onChange={(e) => setInstAdminName(e.target.value)}
+                      placeholder="Full name"
+                      className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">Official Administrator Email *</label>
+                  <div className="relative">
+                    <Mail className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                    <input
+                      type="email"
+                      required
+                      value={instAdminEmail}
+                      onChange={(e) => setInstAdminEmail(e.target.value)}
+                      placeholder="admin@college.edu"
+                      className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                    />
+                  </div>
+                  <p className="text-[10px] text-neutral-400 mt-1">This email will serve as your primary Super Admin login.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">Account Password *</label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                    <input
+                      type={showInstPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={instPassword}
+                      onChange={(e) => setInstPassword(e.target.value)}
+                      placeholder="Create a strong password (min 6 characters)"
+                      className="w-full pl-9 pr-9 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowInstPassword(!showInstPassword)}
+                      className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                    >
+                      {showInstPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">Confirm Password *</label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                    <input
+                      type={showInstConfirmPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={instConfirmPassword}
+                      onChange={(e) => setInstConfirmPassword(e.target.value)}
+                      placeholder="Re-type your password"
+                      className="w-full pl-9 pr-9 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowInstConfirmPassword(!showInstConfirmPassword)}
+                      className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                    >
+                      {showInstConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">Contact Phone (Optional)</label>
+                  <div className="relative">
+                    <Phone className="w-3.5 h-3.5 absolute left-3 top-3 text-neutral-400" />
+                    <input
+                      type="tel"
+                      value={instPhone}
+                      onChange={(e) => setInstPhone(e.target.value)}
+                      placeholder="Phone number"
+                      className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-900 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-neutral-900 hover:bg-black text-white text-xs font-semibold py-3 rounded-xl transition-all shadow-md disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer mt-2"
+              >
+                {loading ? (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                    <span>Configuring Institutional Tenancy...</span>
+                  </>
+                ) : (
+                  <>
+                    <Building2 className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Register &amp; Launch Institution Portal</span>
+                  </>
+                )}
+              </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('LOGIN'); setError(null); setSuccessMsg(null); }}
+                  className="text-xs text-neutral-500 hover:text-neutral-900 cursor-pointer"
+                >
+                  Already have an account? Back to Sign In
+                </button>
+              </div>
+            </form>
+          )}
+
         </div>
 
-        {/* Footer */}
-        <div className="p-3.5 border-t border-neutral-200 bg-neutral-50/50 flex items-center justify-between text-xs shrink-0">
-          <span className="text-neutral-500">
-            {activeTab === 'LOGIN' && "Don't have an institutional account?"}
-            {activeTab === 'REGISTER' && "Already registered or invited?"}
-            {activeTab === 'INVITE' && "Already set your password?"}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              if (activeTab === 'LOGIN') setActiveTab('REGISTER');
-              else setActiveTab('LOGIN');
-            }}
-            className="font-medium text-neutral-900 hover:underline cursor-pointer"
-          >
-            {activeTab === 'LOGIN' && "Register as Independent Candidate"}
-            {activeTab === 'REGISTER' && "Sign in to existing account"}
-            {activeTab === 'INVITE' && "Back to Sign In"}
-          </button>
-        </div>
 
       </div>
     </div>

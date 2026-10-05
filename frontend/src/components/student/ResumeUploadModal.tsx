@@ -1,12 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, UploadCloud, CheckCircle2, FileText, Sparkles, ArrowRight, Clipboard, AlertCircle } from 'lucide-react';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface ResumeUploadModalProps {
   onClose: () => void;
 }
 
 export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose }) => {
+  useBackHandler(true, onClose);
   const { student, uploadResumeData } = useApp();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -80,7 +82,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({ onClose })
               <FileText className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Student Resume Intake & Grounding</h3>
+              <h3 className="text-sm font-semibold tracking-tight text-neutral-900">Student Resume Upload &amp; Profile</h3>
               <p className="text-xs text-neutral-500">Extracts your technical stack to personalize mock interview questions</p>
             </div>
           </div>

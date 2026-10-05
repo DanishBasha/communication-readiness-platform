@@ -3,7 +3,10 @@ import { useApp } from '../../context/AppContext';
 import { 
   ArrowLeft, 
   Activity, 
-  Mic
+  Mic,
+  AlertTriangle,
+  ShieldAlert,
+  Ban
 } from 'lucide-react';
 
 export const DiagnosticReportView: React.FC = () => {
@@ -11,8 +14,10 @@ export const DiagnosticReportView: React.FC = () => {
 
   if (!latestReport) return null;
 
+  const isDisqualified = latestReport.isDisqualified || latestReport.tabSwitches >= 4;
+
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-8 animate-in fade-in duration-200">
+    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-8 space-y-8 animate-in fade-in duration-200">
       
       <div className="flex items-center justify-between">
         <button
@@ -28,33 +33,54 @@ export const DiagnosticReportView: React.FC = () => {
         </span>
       </div>
 
+      {isDisqualified && (
+        <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-5 flex items-start space-x-3.5 text-rose-950 shadow-xs animate-in slide-in-from-top duration-200">
+          <ShieldAlert className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-rose-900">
+              Session Terminated &amp; Candidate Disqualified
+            </h3>
+            <p className="text-xs text-rose-800 leading-relaxed">
+              This interview session was terminated because <strong>4 tab switches were detected</strong>. In accordance with college placement proctoring rules, an overall readiness score of <strong>0 / 100</strong> was recorded and you are permanently disqualified from re-attending this interview.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 sm:p-8 shadow-xs">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
           
           <div className="md:col-span-2 space-y-2">
             <div className="flex items-center space-x-2">
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-neutral-900 text-white font-mono">
-                EVALUATION COMPLETE
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold font-mono ${
+                isDisqualified ? 'bg-rose-600 text-white' : 'bg-neutral-900 text-white'
+              }`}>
+                {isDisqualified ? 'DISQUALIFIED' : 'EVALUATION COMPLETE'}
               </span>
               <span className="text-xs text-neutral-500 font-mono">{latestReport.date}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900">
               Placement Communication Scorecard
             </h1>
-            <p className="text-xs text-neutral-500 leading-relaxed max-w-xl">
-              Holistic readiness evaluation synthesized from spoken vocabulary, technical depth, words-per-minute articulation, and filler word density.
-            </p>
           </div>
 
           <div className="flex flex-col items-center justify-center p-6 bg-neutral-50 border border-neutral-200/80 rounded-2xl text-center">
             <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider font-mono">Overall Readiness</p>
             <div className="flex items-baseline space-x-1 my-1">
-              <span className="text-5xl font-black tracking-tight text-neutral-900">{latestReport.overallScore}</span>
+              <span className={`text-5xl font-black tracking-tight ${isDisqualified ? 'text-rose-600' : 'text-neutral-900'}`}>
+                {latestReport.overallScore}
+              </span>
               <span className="text-base text-neutral-400 font-medium">/100</span>
             </div>
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 mt-1">
-              Placement Ready
-            </span>
+            {isDisqualified ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 border border-rose-300 mt-1">
+                Disqualified
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 mt-1">
+                Placement Ready
+              </span>
+            )}
           </div>
 
         </div>
@@ -70,7 +96,9 @@ export const DiagnosticReportView: React.FC = () => {
           </div>
           <div className="p-3">
             <p className="text-[11px] text-neutral-400 font-mono uppercase">Proctoring Status</p>
-            <p className="text-xl font-bold text-emerald-600 mt-0.5 font-mono">{latestReport.tabSwitches} Switches</p>
+            <p className={`text-xl font-bold mt-0.5 font-mono ${isDisqualified ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {latestReport.tabSwitches} Switches {isDisqualified ? '(DISQUALIFIED)' : ''}
+            </p>
           </div>
         </div>
       </div>
@@ -97,9 +125,6 @@ export const DiagnosticReportView: React.FC = () => {
               style={{ width: `${Math.min(100, (latestReport.averageWpm / 160) * 100)}%` }} 
             />
           </div>
-          <p className="text-xs text-neutral-500 leading-relaxed">
-            Pace is within conversational range for technical interviews. Clear pauses were noted before system architecture explanations.
-          </p>
         </div>
 
         <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
@@ -119,10 +144,6 @@ export const DiagnosticReportView: React.FC = () => {
               </div>
             ))}
           </div>
-
-          <p className="text-xs text-neutral-500 leading-relaxed">
-            Filler word usage is low. Recommend replacing habitual "basically" transitions with intentional 1-second silence.
-          </p>
         </div>
 
       </div>

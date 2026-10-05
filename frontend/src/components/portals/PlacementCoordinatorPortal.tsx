@@ -3,6 +3,9 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
 import { MOCK_MENTEES_LIST } from '../../data/mockData';
 import { AssignSessionModal } from '../common/AssignSessionModal';
+import { StudentDirectoryTable } from '../common/StudentDirectoryTable';
+import { StudentHistoryModal } from '../common/StudentHistoryModal';
+import { AssessmentMonitoringWidget } from '../common/AssessmentMonitoringWidget';
 import type { DynamicProgram, InterviewAssignment } from '../../types';
 import { 
   Users, 
@@ -24,13 +27,15 @@ import {
 } from 'lucide-react';
 
 export const PlacementCoordinatorPortal: React.FC = () => {
-  const { currentUser, assignments } = useApp();
+  const { currentUser, assignments, openStudentDashboard } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCohort, setSelectedCohort] = useState<string>('ALL');
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignTargetScope, setAssignTargetScope] = useState<'ALL_STUDENTS' | 'PROGRAM' | 'DEPARTMENT' | 'SPECIFIC_STUDENT'>('ALL_STUDENTS');
   const [assignProgramName, setAssignProgramName] = useState<string>('');
   const [assignDepartment, setAssignDepartment] = useState<string>('');
+  const [inspectStudentId, setInspectStudentId] = useState<string | null>(null);
+  const [targetStudentForAssign, setTargetStudentForAssign] = useState<any | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [programs, setPrograms] = useState<DynamicProgram[]>([]);
   const [candidates, setCandidates] = useState<any[]>(() => {
@@ -79,7 +84,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
   }, [currentUser?.collegeId]);
 
   const handleExportCsv = () => {
-    const headers = 'ID,Name,RollNumber,Cohort,Domain,MockScore,Checklist,Status\n';
+    const headers = 'ID,Name,RollNumber,Batch,Domain,MockScore,Checklist,Status\n';
     const rows = candidates.map(c => 
       `${c.id},"${c.name}",${c.rollNumber},${c.track},"${c.domain || ''}",${c.score},"${c.checklist}",${c.status}`
     ).join('\n');
@@ -99,7 +104,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
   };
 
   const cohorts = [
-    { id: 'ALL', label: 'All Candidates', count: stats.totalCandidates },
+    { id: 'ALL', label: 'All Students', count: stats.totalCandidates },
     ...programs.map(p => ({
       id: p.name,
       label: p.name,
@@ -123,7 +128,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
+    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-8 space-y-8 animate-in fade-in duration-200">
       
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -134,9 +139,6 @@ export const PlacementCoordinatorPortal: React.FC = () => {
             <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Institutional Placement Intelligence</h1>
             <span className="px-2 py-0.5 text-[10px] font-bold bg-neutral-900 text-white rounded font-mono">SUPER ADMIN</span>
           </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            Macro college-wide placement readiness, dynamic program tracking, and domain benchmark oversight.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -222,14 +224,14 @@ export const PlacementCoordinatorPortal: React.FC = () => {
       {reportGenerated && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center space-x-2 animate-in slide-in-from-top duration-150">
           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span>Senate Academic Council placement audit synthesized: {stats.placementReadyRate}% candidates placement ready across active institutional programs.</span>
+          <span>Placement readiness report: {stats.placementReadyRate}% of students are placement ready across active programs.</span>
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 bg-white border border-neutral-200/90 rounded-2xl shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 text-xs mb-1.5">
-            <span className="font-medium">Total Candidates</span>
+            <span className="font-medium">Total Students</span>
             <Users className="w-4 h-4 text-neutral-400" />
           </div>
           <div className="text-2xl font-bold tracking-tight text-neutral-900">{stats.totalCandidates.toLocaleString()}</div>
@@ -264,92 +266,12 @@ export const PlacementCoordinatorPortal: React.FC = () => {
         </div>
       </div>
 
-      {/* College-Wide Dispatched Mock & Listening Drills */}
-      <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-neutral-100 pb-4">
-          <div>
-            <div className="flex items-center space-x-2">
-              <h3 className="text-base font-semibold text-neutral-900">
-                Dispatched College Mock Interviews &amp; Listening Drills
-              </h3>
-              <span className="px-2 py-0.5 text-[10px] font-bold bg-neutral-100 text-neutral-800 rounded font-mono">
-                {assignments.length} ACTIVE DRILLS
-              </span>
-            </div>
-            <p className="text-xs text-neutral-500 mt-0.5">
-              Targeted oral mock interview rounds and listening comprehension drills assigned across the college.
-            </p>
-          </div>
-
-          <button
-            onClick={() => { setAssignModalOpen(true); setFeedback(null); }}
-            className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-black text-white px-3.5 py-2 rounded-xl text-xs font-medium transition-colors shadow-xs cursor-pointer self-start sm:self-auto"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Dispatch New Drill</span>
-          </button>
-        </div>
-
-        {assignments.length === 0 ? (
-          <div className="text-center py-8 text-neutral-400 text-xs">
-            <Layers className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
-            <p className="font-semibold text-neutral-700">No college assignments dispatched yet.</p>
-            <p className="mt-0.5">Click "Dispatch New Drill" to assign the first mock interview or listening test.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {assignments.map((asg) => {
-              const isInterview = asg.sessionType === 'MOCK_INTERVIEW';
-              const subsCount = asg.submissions?.length || 0;
-              return (
-                <div key={asg.id} className="p-4 bg-neutral-50 border border-neutral-200/80 rounded-xl flex flex-col justify-between space-y-3 hover:border-neutral-300 transition-colors">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                        isInterview ? 'bg-neutral-900 text-white' : 'bg-emerald-900 text-emerald-100'
-                      }`}>
-                        {isInterview ? <Mic className="w-3 h-3 text-emerald-400" /> : <Headphones className="w-3 h-3 text-emerald-300" />}
-                        <span>{isInterview ? 'Mock Interview' : 'Listening Lab'}</span>
-                      </span>
-
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                        asg.isMandatory ? 'bg-rose-100 text-rose-800' : 'bg-neutral-200 text-neutral-700'
-                      }`}>
-                        {asg.isMandatory ? 'Mandatory' : 'Practice'}
-                      </span>
-                    </div>
-
-                    <h4 className="text-xs font-bold text-neutral-900 line-clamp-1">{asg.title}</h4>
-                    <p className="text-[11px] text-neutral-500">
-                      By: <span className="font-medium text-neutral-700">{asg.assignedByName}</span> ({asg.assignedByRole.replace(/_/g, ' ')})
-                    </p>
-
-                    <div className="text-[11px] text-neutral-600 bg-white p-2 rounded-lg border border-neutral-200/60 space-y-0.5">
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Target:</span>
-                        <span className="font-medium text-neutral-800">{asg.targetProgramName || asg.targetDomainOrTrack || asg.targetScope}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Due:</span>
-                        <span className="font-mono text-neutral-700">{asg.dueDate}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-xs">
-                    <span className="text-[11px] text-neutral-500">
-                      <strong className="text-neutral-900">{subsCount}</strong> submissions
-                    </span>
-                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-mono">
-                      Active
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* Assessment & Interview Monitoring Hub */}
+      <AssessmentMonitoringWidget 
+        collegeId={currentUser?.collegeId} 
+        programName={selectedCohort !== 'ALL' ? selectedCohort : undefined}
+        titlePrefix={selectedCohort !== 'ALL' ? selectedCohort : undefined}
+      />
 
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 pb-3">
         {cohorts.map((cohort) => (
@@ -375,8 +297,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
               <Mic className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-xs font-semibold">Active Program Cohort: {selectedCohort}</p>
-              <p className="text-[11px] text-neutral-400">Instantly dispatch a customized mock interview or listening test to all students in {selectedCohort}.</p>
+              <p className="text-xs font-semibold">Active Training Program: {selectedCohort}</p>
             </div>
           </div>
           <button
@@ -395,73 +316,18 @@ export const PlacementCoordinatorPortal: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white border border-neutral-200/90 rounded-2xl overflow-hidden shadow-xs">
-        <div className="p-4 sm:px-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="relative w-full sm:w-80">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="Filter candidate by name or roll number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-9 pr-3 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-900 transition-colors"
-            />
-          </div>
-
-          <span className="text-xs text-neutral-500">
-            Showing active mock interview evaluations
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
-              <tr>
-                <th className="py-3 px-6 font-medium">CANDIDATE</th>
-                <th className="py-3 px-6 font-medium">COHORT TRACK</th>
-                <th className="py-3 px-6 font-medium">DOMAIN</th>
-                <th className="py-3 px-6 font-medium">MOCK SCORE</th>
-                <th className="py-3 px-6 font-medium">STATUS</th>
-                <th className="py-3 px-6 font-medium text-right">ACTION</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {filteredCandidates.map((s) => (
-                <tr key={s.id} className="hover:bg-neutral-50/70 transition-colors">
-                  <td className="py-3.5 px-6 font-medium text-neutral-900">
-                    <div>{s.name}</div>
-                    <div className="text-[10px] text-neutral-400 font-mono">{s.rollNumber}</div>
-                  </td>
-                  <td className="py-3.5 px-6">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-100 text-neutral-800 border border-neutral-200 font-mono">
-                      {s.track}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-6 text-neutral-600">
-                    {s.domain}
-                  </td>
-                  <td className="py-3.5 px-6">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-semibold text-[11px] bg-neutral-900 text-white">
-                      {s.score}/100
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-6">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
-                      {s.status}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-6 text-right">
-                    <button className="text-neutral-500 hover:text-neutral-900 font-medium inline-flex items-center">
-                      <span>Inspect</span>
-                      <ArrowUpRight className="w-3 h-3 ml-0.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <StudentDirectoryTable
+        students={candidates}
+        onSelectStudent={(s) => openStudentDashboard(s)}
+        onAssignStudent={(s) => {
+          setAssignTargetScope('SPECIFIC_STUDENT');
+          setTargetStudentForAssign(s);
+          setAssignModalOpen(true);
+        }}
+        showAssignAction={true}
+        title="College Placement Candidate Roster"
+        subtitle="Inspect candidate diagnostics, turn scores, and readiness criteria across programs and tracks"
+      />
 
       {assignModalOpen && (
         <AssignSessionModal
@@ -479,6 +345,13 @@ export const PlacementCoordinatorPortal: React.FC = () => {
           defaultProgramName={assignProgramName}
           defaultDepartment={assignDepartment}
           studentsList={candidates}
+        />
+      )}
+
+      {inspectStudentId && (
+        <StudentHistoryModal
+          studentId={inspectStudentId}
+          onClose={() => setInspectStudentId(null)}
         />
       )}
 

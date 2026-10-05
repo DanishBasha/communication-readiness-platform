@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Trash2, X } from 'lucide-react';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface DeleteConfirmModalProps {
   title: string;
@@ -18,6 +19,8 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   onCancel,
   isDeleting = false
 }) => {
+  useBackHandler(true, onCancel);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
       <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-neutral-200">

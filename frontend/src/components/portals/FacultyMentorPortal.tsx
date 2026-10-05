@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../services/api';
+import { useBackHandler } from '../../hooks/useBackHandler';
 import { StudentHistoryModal } from '../common/StudentHistoryModal';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal';
 import { AssignSessionModal } from '../common/AssignSessionModal';
+import { StudentDirectoryTable } from '../common/StudentDirectoryTable';
 import type { DynamicProgram, InterviewAssignment } from '../../types';
 import { 
   GraduationCap, 
@@ -25,7 +27,7 @@ import {
 } from 'lucide-react';
 
 export const FacultyMentorPortal: React.FC = () => {
-  const { currentUser, verifyCriteriaTask, assignments } = useApp();
+  const { currentUser, verifyCriteriaTask, assignments, openStudentDashboard } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [mentees, setMentees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +39,11 @@ export const FacultyMentorPortal: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'MENTEES' | 'DRILLS'>('MENTEES');
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+
+  useBackHandler(createModalOpen, () => setCreateModalOpen(false));
+  useBackHandler(Boolean(inspectStudentId), () => setInspectStudentId(null));
+  useBackHandler(Boolean(deleteTarget), () => setDeleteTarget(null));
+  useBackHandler(assignModalOpen, () => setAssignModalOpen(false));
   const [targetStudentForAssign, setTargetStudentForAssign] = useState<any | null>(null);
   const [stuName, setStuName] = useState('');
   const [stuEmail, setStuEmail] = useState('');
@@ -62,9 +69,12 @@ export const FacultyMentorPortal: React.FC = () => {
       if (progs) {
         setPrograms(progs);
         if (progs.length > 0 && selectedProgId === 'GENERAL') {
-          setSelectedProgId(progs[0].id);
-          if (progs[0].hasSubPrograms && progs[0].subPrograms?.length > 0) {
-            setSelectedSubProgram(progs[0].subPrograms[0]);
+          const firstProg = progs[0];
+          if (firstProg) {
+            setSelectedProgId(firstProg.id);
+            if (firstProg.hasSubPrograms && firstProg.subPrograms && firstProg.subPrograms.length > 0) {
+              setSelectedSubProgram(firstProg.subPrograms[0]);
+            }
           }
         }
       }
@@ -159,7 +169,7 @@ export const FacultyMentorPortal: React.FC = () => {
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
+    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-8 space-y-8 animate-in fade-in duration-200">
       
       <div className="bg-white border border-neutral-200/90 rounded-2xl p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -252,118 +262,17 @@ export const FacultyMentorPortal: React.FC = () => {
       </div>
 
       {activeTab === 'MENTEES' && (
-        <div className="bg-white border border-neutral-200/90 rounded-2xl overflow-hidden shadow-xs">
-          <div className="p-4 sm:px-6 border-b border-neutral-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Search mentee by name or roll number..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-9 pr-3 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-900 transition-colors"
-              />
-            </div>
-
-            <span className="text-xs text-neutral-500">
-              You only see students assigned directly under your mentorship
-            </span>
-          </div>
-
-          {mentees.length === 0 ? (
-            <div className="text-center py-12 text-neutral-400 text-xs">
-              <GraduationCap className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
-              <p className="font-semibold text-neutral-700 text-sm">No mentees assigned yet.</p>
-              <p className="mt-1 max-w-sm mx-auto text-neutral-500">
-                Click "Enroll Student" above to enroll your first student, or wait for Program Admin to assign cohort students.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50/80 text-neutral-500 font-mono text-[11px] border-b border-neutral-200/70">
-                  <tr>
-                    <th className="py-3 px-6 font-medium">MENTEE</th>
-                    <th className="py-3 px-6 font-medium">COHORT TRACK</th>
-                    <th className="py-3 px-6 font-medium">DOMAIN</th>
-                    <th className="py-3 px-6 font-medium">LATEST MOCK</th>
-                    <th className="py-3 px-6 font-medium">CHECKLIST</th>
-                    <th className="py-3 px-6 font-medium text-right">MENTOR ACTION</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {filteredMentees.map((s) => {
-                    const isSigned = signedOffMap[s.id];
-                    return (
-                      <tr key={s.id} className="hover:bg-neutral-50/70 transition-colors">
-                        <td className="py-3.5 px-6 font-medium text-neutral-900">
-                          <div>{s.name}</div>
-                          <div className="text-[10px] text-neutral-400 font-mono">{s.rollNumber}</div>
-                        </td>
-                        <td className="py-3.5 px-6">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800 border border-neutral-200">
-                            {s.track}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-6 text-neutral-600">
-                          {s.domain || 'Department General'}
-                        </td>
-                        <td className="py-3.5 px-6">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-semibold text-[11px] bg-neutral-900 text-white">
-                            {s.score ? `${s.score}%` : 'Not Taken'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-6 font-mono text-neutral-700">
-                          {isSigned ? 'Verified' : s.checklist || '0/5 Verified'}
-                        </td>
-                        <td className="py-3.5 px-6 text-right space-x-2">
-                          <button
-                            onClick={() => {
-                              setTargetStudentForAssign(s);
-                              setAssignModalOpen(true);
-                            }}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                            title="Assign verbal mock or listening drill directly to this mentee"
-                          >
-                            <Plus className="w-3 h-3 text-emerald-600" />
-                            <span>Assign Assessment</span>
-                          </button>
-                          <button
-                            onClick={() => setInspectStudentId(s.id)}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                            title="View Interview History & Turns"
-                          >
-                            <Eye className="w-3 h-3" />
-                            <span>History</span>
-                          </button>
-                          {isSigned ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <Check className="w-3 h-3 mr-1" /> Verified
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleSignOff(s.id)}
-                              className="bg-neutral-900 hover:bg-black text-white px-2.5 py-1 rounded-lg text-xs font-medium transition-colors shadow-2xs cursor-pointer"
-                            >
-                              Sign Off
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setDeleteTarget({ id: s.userId || s.id, name: s.name, role: 'STUDENT' })}
-                            className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-medium transition-colors cursor-pointer inline-flex items-center"
-                            title="Remove Mentee"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <StudentDirectoryTable
+          students={mentees}
+          onSelectStudent={(s) => openStudentDashboard(s)}
+          onAssignStudent={(s) => {
+            setTargetStudentForAssign(s);
+            setAssignModalOpen(true);
+          }}
+          showAssignAction={true}
+          title="Assigned Mentees"
+          subtitle=""
+        />
       )}
 
       {activeTab === 'DRILLS' && (
@@ -373,9 +282,6 @@ export const FacultyMentorPortal: React.FC = () => {
               <h3 className="text-base font-semibold text-neutral-900">
                 Assigned Practice Drills &amp; Mentee Submissions
               </h3>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Track candidate submissions, auditory listening scores, and mock interview speech rubrics across your assigned mentees.
-              </p>
             </div>
             <button
               onClick={() => {
@@ -590,7 +496,7 @@ export const FacultyMentorPortal: React.FC = () => {
                       const newId = e.target.value;
                       setSelectedProgId(newId);
                       const p = programs.find(pr => pr.id === newId);
-                      if (p?.hasSubPrograms && p.subPrograms.length > 0) {
+                      if (p?.hasSubPrograms && p.subPrograms && p.subPrograms.length > 0) {
                         setSelectedSubProgram(p.subPrograms[0]);
                       } else {
                         setSelectedSubProgram('');
@@ -614,7 +520,7 @@ export const FacultyMentorPortal: React.FC = () => {
                     onChange={(e) => setSelectedSubProgram(e.target.value)}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:outline-none focus:border-neutral-900"
                   >
-                    {programs.find(p => p.id === selectedProgId)?.subPrograms.map((sub) => (
+                    {(programs.find(p => p.id === selectedProgId)?.subPrograms || []).map((sub) => (
                       <option key={sub} value={sub}>{sub}</option>
                     ))}
                   </select>
@@ -690,6 +596,7 @@ export const FacultyMentorPortal: React.FC = () => {
           defaultTargetScope={targetStudentForAssign ? 'SPECIFIC_STUDENT' : 'MY_MENTEES'}
           menteesList={mentees}
           studentsList={mentees}
+          targetStudent={targetStudentForAssign}
         />
       )}
 
