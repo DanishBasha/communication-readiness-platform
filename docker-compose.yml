@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: comm_readiness
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ai-service:
+    build: ./ai-service
+    restart: unless-stopped
+    # Load LLM_PROVIDER, LLM_API_KEY, LLM_MODEL, etc. from ai-service/.env
+    # Docker-specific overrides below (DATABASE_URL, REDIS_URL) take precedence.
+    env_file:
+      - ./ai-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/comm_readiness
+      REDIS_URL: redis://redis:6379/0
+      MODULE3_PERFORMANCE_CACHE_TTL: "600"
+      MODULE3_SKILL_GAP_CACHE_TTL: "600"
+      MODULE3_KNOWLEDGE_CACHE_TTL: "3600"
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ai-service-worker:
+    build: ./ai-service
+    restart: unless-stopped
+    command: python autoscaler.py
+    env_file:
+      - ./ai-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/comm_readiness
+      REDIS_URL: redis://redis:6379/0
+      MODULE3_PERFORMANCE_CACHE_TTL: "600"
+      MODULE3_SKILL_GAP_CACHE_TTL: "600"
+      MODULE3_KNOWLEDGE_CACHE_TTL: "3600"
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me}
+      MIN_WORKERS: ${MIN_WORKERS:-1}
+      MAX_WORKERS: ${MAX_WORKERS:-4}
+      TARGET_JOBS_PER_WORKER: ${TARGET_JOBS_PER_WORKER:-1}
+      SCALE_UP_COOLDOWN_SECONDS: ${SCALE_UP_COOLDOWN_SECONDS:-10}
+      SCALE_DOWN_COOLDOWN_SECONDS: ${SCALE_DOWN_COOLDOWN_SECONDS:-30}
+      AUTOSCALER_CHECK_INTERVAL: ${AUTOSCALER_CHECK_INTERVAL:-5}
+      MAX_CONCURRENT_AGENT_JOBS: ${MAX_CONCURRENT_AGENT_JOBS:-4}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/comm_readiness
+      AI_SERVICE_URL: http://ai-service:8000
+      AI_INTERNAL_KEY: ${INTERNAL_API_KEY:-change-me}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production-min-32-chars}
+      NODE_ENV: production
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
