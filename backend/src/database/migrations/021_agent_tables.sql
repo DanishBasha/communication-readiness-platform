@@ -3,7 +3,7 @@
 -- termination_conditions, max_steps, max_tool_calls, max_retries,
 -- timeout_seconds, is_active.
 -- Unique on (name, version).
-CREATE TABLE agent.agent_definitions (
+CREATE TABLE IF NOT EXISTS agent.agent_definitions (
   id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   name                  VARCHAR     NOT NULL,
   version               INTEGER     NOT NULL DEFAULT 1,
@@ -21,13 +21,13 @@ CREATE TABLE agent.agent_definitions (
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX uq_agent_def_name_version ON agent.agent_definitions (name, version);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_def_name_version ON agent.agent_definitions (name, version);
 
 
 -- agent.agent_runs  (DBML §20)
 -- triggered_by_user_id (nullable), goal_snapshot text, correlation_id varchar,
 -- started_at. No goal, no learning_plan_id, no updated_at per DBML.
-CREATE TABLE agent.agent_runs (
+CREATE TABLE IF NOT EXISTS agent.agent_runs (
   id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_definition_id   UUID        NOT NULL REFERENCES agent.agent_definitions(id),
   student_id            UUID        NOT NULL REFERENCES org.students(id) ON DELETE CASCADE,
@@ -41,12 +41,12 @@ CREATE TABLE agent.agent_runs (
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_agent_runs_student ON agent.agent_runs (student_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_student ON agent.agent_runs (student_id);
 
 
 -- agent.agent_steps  (DBML §20)
 -- sequence_no (not sequence), error_code + error_message (not single error).
-CREATE TABLE agent.agent_steps (
+CREATE TABLE IF NOT EXISTS agent.agent_steps (
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_run_id  UUID        NOT NULL REFERENCES agent.agent_runs(id) ON DELETE CASCADE,
   sequence_no   INTEGER     NOT NULL,
@@ -61,4 +61,4 @@ CREATE TABLE agent.agent_steps (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX uq_agent_step_run_seq ON agent.agent_steps (agent_run_id, sequence_no);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_step_run_seq ON agent.agent_steps (agent_run_id, sequence_no);

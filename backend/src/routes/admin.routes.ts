@@ -1,14 +1,15 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { db } from '../shared/db/pool';
 import { AppError } from '../shared/errors/AppError';
 import { sendSuccess, sendError } from '../shared/helpers/response';
 import { AuthRequest } from '../middleware/authenticate';
 import { requireRole } from '../middleware/authorize';
+import { sendStaffWelcomeEmail } from '../services/emailService';
 
 export const adminRouter = Router();
-
-const VALID_STATUSES = ['ACTIVE', 'INACTIVE', 'SUSPENDED'] as const;
 
 // ── GET /api/admin/users (PROGRAM_ADMIN) ──────────────────────────────────────
 
@@ -101,6 +102,62 @@ adminRouter.patch(
       if (rows.length === 0) throw new AppError(404, 'User not found', 'NOT_FOUND');
 
       sendSuccess(res, { user: rows[0] });
+    } catch (err) {
+      sendError(res, err);
+    }
+  }
+);
+
+// ── POST /api/admin/users — create staff account + send welcome email ─────────
+
+const createStaffSchema = z.object({
+  name: z.string().min(2).max(255),
+  email: z.string().email().transform(s => s.toLowerCase()),
+  role: z.enum(['FACULTY_MENTOR', 'TRAINER', 'PLACEMENT_COORDINATOR', 'PROGRAM_ADMIN']),
+});
+
+adminRouter.post(
+  '/users',
+  requireRole('PROGRAM_ADMIN', 'SUPER_ADMIN'),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const parsed = createStaffSchema.safeParse(req.body);
+      if (!parsed.success) throw new AppError(422, 'Validation failed', 'VALIDATION_ERROR');
+
+      const { name, email, role } = parsed.data;
+
+      const { rows: existing } = await db.query(
+        'SELECT id FROM identity.users WHERE email = $1',
+        [email]
+      );
+      if (existing.length > 0) throw new AppError(409, 'Email already registered', 'CONFLICT');
+
+      // Generate a secure 12-character random password (alphanumeric only)
+      const password = crypto.randomBytes(16).toString('hex').slice(0, 12);
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      const { rows } = await db.query(
+        `INSERT INTO identity.users (name, email, password_hash, role)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, name, email, role, created_at`,
+        [name, email, passwordHash, role]
+      );
+
+      const user = rows[0];
+
+      // Send welcome email non-blocking — failure must not break the 201 response
+      const createdByName = (req as AuthRequest).user?.name ?? 'Platform Admin';
+      sendStaffWelcomeEmail({
+        to: email,
+        name,
+        role,
+        password,
+        createdBy: createdByName,
+      }).catch((err: unknown) => {
+        console.error('[adminRouter] Welcome email failed:', err);
+      });
+
+      sendSuccess(res, { user }, 201);
     } catch (err) {
       sendError(res, err);
     }

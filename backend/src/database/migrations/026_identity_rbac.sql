@@ -1,5 +1,5 @@
 -- identity.roles  (DBML §2)
-CREATE TABLE identity.roles (
+CREATE TABLE IF NOT EXISTS identity.roles (
   id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
   name        VARCHAR NOT NULL UNIQUE,
   description TEXT,
@@ -7,14 +7,14 @@ CREATE TABLE identity.roles (
 );
 
 -- identity.permissions  (DBML §2)
-CREATE TABLE identity.permissions (
+CREATE TABLE IF NOT EXISTS identity.permissions (
   id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
   name        VARCHAR NOT NULL UNIQUE,
   description TEXT
 );
 
 -- identity.role_permissions  (DBML §2)
-CREATE TABLE identity.role_permissions (
+CREATE TABLE IF NOT EXISTS identity.role_permissions (
   role_id       UUID NOT NULL REFERENCES identity.roles(id) ON DELETE CASCADE,
   permission_id UUID NOT NULL REFERENCES identity.permissions(id) ON DELETE CASCADE,
   PRIMARY KEY (role_id, permission_id)
@@ -22,7 +22,7 @@ CREATE TABLE identity.role_permissions (
 
 -- identity.role_assignments  (DBML §2)
 -- Scoped role assignment. scope_type indicates which scope columns are populated.
-CREATE TABLE identity.role_assignments (
+CREATE TABLE IF NOT EXISTS identity.role_assignments (
   id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id        UUID        NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
   role_id        UUID        NOT NULL REFERENCES identity.roles(id) ON DELETE CASCADE,
@@ -40,9 +40,9 @@ CREATE TABLE identity.role_assignments (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_role_assignments_user    ON identity.role_assignments (user_id);
-CREATE INDEX idx_role_assignments_role    ON identity.role_assignments (role_id);
-CREATE INDEX idx_role_assignments_active  ON identity.role_assignments (user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_role_assignments_user    ON identity.role_assignments (user_id);
+CREATE INDEX IF NOT EXISTS idx_role_assignments_role    ON identity.role_assignments (role_id);
+CREATE INDEX IF NOT EXISTS idx_role_assignments_active  ON identity.role_assignments (user_id, is_active);
 
 -- Seed the five platform roles
 INSERT INTO identity.roles (name, description) VALUES
