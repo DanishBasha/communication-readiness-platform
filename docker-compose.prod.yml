@@ -1,0 +1,103 @@
+services:
+  backend:
+    image: ${DOCKERHUB_USERNAME}/communication-readiness-backend:${IMAGE_TAG}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "5000:5000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:5000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - app
+
+  ai-service:
+    image: ${DOCKERHUB_USERNAME}/communication-readiness-ai:${IMAGE_TAG}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    expose:
+      - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app
+
+  ai-worker:
+    image: ${DOCKERHUB_USERNAME}/communication-readiness-ai:${IMAGE_TAG}
+    restart: unless-stopped
+    command: ["python", "worker.py"]
+    env_file:
+      - .env.production
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+        "--requirepass",
+        "${REDIS_PASSWORD}"
+      ]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "-a",
+          "${REDIS_PASSWORD}",
+          "ping"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app
+
+volumes:
+  redis_data:
+
+networks:
+  app:
+    driver: bridge
