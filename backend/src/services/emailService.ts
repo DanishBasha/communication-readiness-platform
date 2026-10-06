@@ -79,7 +79,7 @@ export async function sendStaffWelcomeEmail(opts: StaffWelcomeEmailOptions): Pro
 </html>`;
 
   await getResend().emails.send({
-    from: env.RESEND_FROM_EMAIL,
+    from: env.RESEND_FROM_EMAIL || 'noreply@example.com',
     to: opts.to,
     subject: `Your ${env.APP_NAME} account credentials`,
     html,

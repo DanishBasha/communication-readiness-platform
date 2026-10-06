@@ -60,8 +60,8 @@ async function delPattern(pattern: string): Promise<void> {
     const client = await getClient();
     let cursor = 0;
     do {
-      const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
-      cursor = reply.cursor;
+      const reply = await client.scan(cursor as any, { MATCH: pattern, COUNT: 100 });
+      cursor = Number(reply.cursor);
       if (reply.keys.length > 0) await client.del(reply.keys);
     } while (cursor !== 0);
   } catch {

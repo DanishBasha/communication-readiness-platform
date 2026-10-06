@@ -14,6 +14,18 @@ const schema = z.object({
   UPLOAD_DIR: z.string().default('uploads'),
   // Shared secret for internal calls to the Python AI service
   AI_INTERNAL_KEY: z.string().default('change-me'),
+
+  // Session/Assessment limits
+  MAX_QUESTIONS_PER_SESSION: z.coerce.number().default(10),
+  MAX_TAB_SWITCH_LIMIT: z.coerce.number().default(3),
+
+  // Optional third-party services
+  REDIS_URL: z.string().optional(),
+  DEEPGRAM_API_KEY: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().optional(),
+  APP_NAME: z.string().default('AI Interview Platform'),
+  APP_URL: z.string().default('http://localhost:5173'),
 });
 
 export const env = schema.parse(process.env);

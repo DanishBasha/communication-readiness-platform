@@ -24,7 +24,7 @@ eventBus.on(Events.USER_REGISTERED, async (payload: UserRegisteredPayload) => {
   }
 });
 
-const server = app.listen(env.PORT, async () => {
+const server = app.listen(env.PORT, '0.0.0.0', async () => {
   console.log(`[backend] http://localhost:${env.PORT}  (${env.NODE_ENV})`);
   // Recover any agent runs that were RUNNING when the previous process died
   try {
