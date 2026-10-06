@@ -66,10 +66,12 @@ authRouter.post('/register', async (req: Request, res: Response): Promise<void> 
       );
       const userId = userRows[0].id;
 
+      // roll_number is required NOT NULL — generate a unique one from timestamp + random suffix
+      const rollNumber = `STU-${Date.now()}-${Math.floor(Math.random() * 9000) + 1000}`;
       const { rows: studentRows } = await client.query<{ id: string }>(
-        `INSERT INTO org.students (user_id, program_id, batch_id, subdivision_id)
+        `INSERT INTO org.students (user_id, roll_number, batch_id, subdivision_id)
          VALUES ($1, $2, $3, $4) RETURNING id`,
-        [userId, batchRows[0].program_id, batchId, subdivisionId ?? null]
+        [userId, rollNumber, batchId, subdivisionId ?? null]
       );
       const studentId = studentRows[0].id;
 

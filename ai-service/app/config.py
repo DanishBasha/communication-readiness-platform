@@ -1,3 +1,9 @@
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Use absolute path so this works regardless of which directory uvicorn is started from
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+
 from pydantic_settings import BaseSettings
 
 

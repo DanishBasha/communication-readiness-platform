@@ -1,11 +1,21 @@
-import { Resend } from 'resend';
+import * as nodemailer from 'nodemailer';
 import { env } from '../config/env';
 
-let _resend: Resend | null = null;
+let _transporter: nodemailer.Transporter | null = null;
 
-function getResend(): Resend {
-  if (!_resend) _resend = new Resend(env.RESEND_API_KEY);
-  return _resend;
+function getTransporter(): nodemailer.Transporter {
+  if (!_transporter) {
+    _transporter = nodemailer.createTransport({
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: false, // STARTTLS
+      auth: {
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+      },
+    });
+  }
+  return _transporter;
 }
 
 export interface StaffWelcomeEmailOptions {
@@ -17,8 +27,8 @@ export interface StaffWelcomeEmailOptions {
 }
 
 export async function sendStaffWelcomeEmail(opts: StaffWelcomeEmailOptions): Promise<void> {
-  if (!env.RESEND_API_KEY) {
-    console.warn('[emailService] RESEND_API_KEY not set — skipping welcome email for', opts.to);
+  if (!env.SMTP_USER) {
+    console.warn('[emailService] SMTP_USER not set — skipping welcome email for', opts.to);
     return;
   }
 
@@ -78,10 +88,11 @@ export async function sendStaffWelcomeEmail(opts: StaffWelcomeEmailOptions): Pro
 </body>
 </html>`;
 
-  await getResend().emails.send({
-    from: env.RESEND_FROM_EMAIL || 'noreply@example.com',
+  const info = await getTransporter().sendMail({
+    from: env.SMTP_FROM,
     to: opts.to,
     subject: `Your ${env.APP_NAME} account credentials`,
     html,
   });
+  console.log('[emailService] Email sent OK messageId=', info.messageId, 'to=', opts.to);
 }
