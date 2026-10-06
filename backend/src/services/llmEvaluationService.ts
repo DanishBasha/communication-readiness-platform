@@ -7,6 +7,7 @@ import axios from 'axios';
 import { IncomingMessage } from 'http';
 import { env } from '../config/env';
 import { sessionContextService, TurnContext } from './sessionContextService';
+import { topicCacheService } from './topicCacheService';
 import { wsManager } from './wsManager';
 import type { AudioStartMeta } from './deepgramService';
 
@@ -190,6 +191,24 @@ export async function triggerLLMEvaluation(
     technicalScore,
     meta.difficulty,
   );
+
+  // Cache the next question and rubric by topic (persistent cache)
+  if (raw.next_question_text && raw.rubric_for_next_question) {
+    const extractedTopic = topicCacheService.extractTopicFromQuestion(raw.next_question_text);
+    if (extractedTopic) {
+      // Non-blocking: cache in background
+      topicCacheService
+        .addToCache(
+          extractedTopic,
+          raw.next_question_text,
+          raw.rubric_for_next_question,
+          nextDifficulty
+        )
+        .catch((err) => {
+          console.error('[llmEvaluation] Topic cache write failed:', err);
+        });
+    }
+  }
 
   const updatedState = await sessionContextService
     .updateState(sessionId, {

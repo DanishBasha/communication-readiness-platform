@@ -13,6 +13,7 @@ import { skillsRouter } from './skills.routes';
 import { performanceRouter } from './performance.routes';
 import { listeningRouter } from './listening.routes';
 import { learningRouter } from './learning.routes';
+import { topicCacheRouter } from './topicCache.routes';
 import { authenticate } from '../middleware/authenticate';
 
 export const router = Router();
@@ -40,3 +41,6 @@ router.use('/skills', authenticate, skillsRouter);
 router.use('/performance', authenticate, performanceRouter);
 router.use('/listening', authenticate, listeningRouter);
 router.use('/learning', authenticate, learningRouter);
+
+// Topic Cache — Persistent question/rubric cache
+router.use('/topic-cache', authenticate, topicCacheRouter);
