@@ -1,5 +1,5 @@
 -- knowledge.listening_stories  (DBML §17)
-CREATE TABLE knowledge.listening_stories (
+CREATE TABLE IF NOT EXISTS knowledge.listening_stories (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   title       VARCHAR,
   content     TEXT,
@@ -13,7 +13,7 @@ CREATE TABLE knowledge.listening_stories (
 
 
 -- knowledge.knowledge_documents  (DBML §19)
-CREATE TABLE knowledge.knowledge_documents (
+CREATE TABLE IF NOT EXISTS knowledge.knowledge_documents (
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   title            VARCHAR,
   source_type      VARCHAR,
@@ -29,7 +29,7 @@ CREATE TABLE knowledge.knowledge_documents (
 
 
 -- knowledge.knowledge_chunks  (DBML §19)
-CREATE TABLE knowledge.knowledge_chunks (
+CREATE TABLE IF NOT EXISTS knowledge.knowledge_chunks (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id       UUID        NOT NULL REFERENCES knowledge.knowledge_documents(id) ON DELETE CASCADE,
   chunk_index       INTEGER,
@@ -40,7 +40,7 @@ CREATE TABLE knowledge.knowledge_chunks (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX uq_knowledge_chunk ON knowledge.knowledge_chunks (document_id, chunk_index);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_chunk ON knowledge.knowledge_chunks (document_id, chunk_index);
 
 -- Add embedding column only when pgvector is installed
 DO $$

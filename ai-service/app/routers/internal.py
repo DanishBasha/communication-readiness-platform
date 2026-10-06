@@ -24,7 +24,7 @@ class InvalidateCacheRequest(BaseModel):
     student_id: str
 
 
-@router.post("/cache/invalidate", status_code=204)
+@router.post("/cache/invalidate", status_code=204, response_model=None)
 def invalidate_student_cache(
     request: InvalidateCacheRequest,
     x_internal_key: str = Header(default=""),

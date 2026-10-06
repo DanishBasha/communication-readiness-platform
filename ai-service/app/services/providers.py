@@ -312,6 +312,7 @@ class MockProvider(BaseProvider):
         messages: list[dict[str, str]],
         response_format: dict[str, str] | None = None,
         temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> str:
         content = messages[-1].get("content", "").lower()
         if "interview question" in content or "generate" in content:

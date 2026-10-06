@@ -1,11 +1,18 @@
 import { Pool } from 'pg';
 import { env } from './env';
 
+// Supabase pooler connections (port 6543 = transaction-mode) and remote
+// Postgres connections need more time than the default 2 s budget.
+// SSL is required by Supabase; rejectUnauthorized:false avoids self-signed
+// cert issues on the pooler end.
 export const db = new Pool({
   connectionString: env.DATABASE_URL,
-  max: 10,
+  max: 30,
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 2_000,
+  connectionTimeoutMillis: 10_000,
+  ssl: env.DATABASE_URL.includes('supabase.com') || env.DATABASE_URL.includes('supabase.co')
+    ? { rejectUnauthorized: false }
+    : undefined,
 });
 
 db.on('connect', () => {
