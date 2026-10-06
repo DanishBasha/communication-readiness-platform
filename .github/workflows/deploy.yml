@@ -3,7 +3,7 @@ name: CI/CD
 on:
   push:
     branches:
-      - main
+      - prod
 
 permissions:
   contents: read
@@ -112,7 +112,7 @@ jobs:
           script: |
             set -e
 
-            cd /opt/communication-readiness
+            cd /opt/pcp
 
             echo "Fetching secrets from AWS Secrets Manager..."
 
@@ -134,28 +134,33 @@ jobs:
 
             chmod 600 .env.production
 
+            # Load Secrets Manager values into the shell
+            set -a
+            source .env.production
+            set +a
+
             export IMAGE_TAG="${IMAGE_TAG}"
             export DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME}"
 
             echo "Pulling Docker images..."
 
             docker compose \
-              --env-file .env.production \
               -f docker-compose.prod.yml \
+              --env-file .env.production \
               pull
 
             echo "Running database migrations..."
 
             docker compose \
-              --env-file .env.production \
               -f docker-compose.prod.yml \
+              --env-file .env.production \
               run --rm --no-deps backend npm run migrate
 
             echo "Starting production services..."
 
             docker compose \
-              --env-file .env.production \
               -f docker-compose.prod.yml \
+              --env-file .env.production \
               up -d
 
             echo "Waiting for services..."
@@ -163,8 +168,8 @@ jobs:
             sleep 15
 
             docker compose \
-              --env-file .env.production \
               -f docker-compose.prod.yml \
+              --env-file .env.production \
               ps
 
             echo "Checking backend..."
@@ -174,8 +179,8 @@ jobs:
             echo "Checking AI service..."
 
             docker compose \
-              --env-file .env.production \
               -f docker-compose.prod.yml \
+              --env-file .env.production \
               exec -T ai-service \
               python -c \
               "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
