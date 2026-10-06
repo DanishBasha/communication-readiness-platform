@@ -5,6 +5,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: communication_backend
+    env_file:
+      - ./backend/.env
     ports:
       - "5000:5000"
 
@@ -36,3 +38,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+volumes:
+  redis_data:

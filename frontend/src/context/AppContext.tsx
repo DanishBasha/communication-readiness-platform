@@ -1638,26 +1638,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loginUser = async (email: string, password: string) => {
     const res = await api.auth.login(email, password);
     const user = res.user;
+
+    // Backend returns minimal user info: {id, name, email, role}
+    // Additional fields are optional and will be undefined for now
     const authUser: AuthUser = {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
-      studentId: res.studentId,
-      collegeId: user.collegeId,
-      collegeName: user.collegeName,
-      programId: user.programId,
-      programName: user.programName,
-      department: user.department,
-      className: user.className,
-      assignedClassName: user.assignedClassName,
-      assignedClasses: user.assignedClasses,
-      subProgramName: user.subProgramName,
-      isIndependent: user.isIndependent,
-      permissions: user.permissions
+      role: user.role as UserRole,
+      studentId: res.studentId || undefined,
+      // Optional fields - backend doesn't provide these yet
+      collegeId: undefined,
+      collegeName: undefined,
+      programId: undefined,
+      programName: undefined,
+      department: undefined,
+      className: undefined,
+      assignedClassName: undefined,
+      assignedClasses: undefined,
+      subProgramName: undefined,
+      isIndependent: undefined,
+      permissions: undefined
     };
+
     setCurrentUser(authUser);
-    setActiveRole(user.role);
+    setActiveRole(user.role as UserRole);
     setIsAuthenticated(true);
     localStorage.setItem('auth_user', JSON.stringify(authUser));
     setAuthModalOpen(false);
@@ -1877,7 +1882,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
 
       if (!targetProfile) {
-        const all = await api.admin.getStudents();
+        const all = await api.admin.getUsers({ role: 'STUDENT' }).then(users =>
+          users.length > 0 ? users : api.admin.getStudents()
+        ).catch(() => api.admin.getStudents());
         const found = all.find((item: any) => item.id === id || item.rollNumber === id);
         if (found) {
           return openStudentDashboard(found);
@@ -1963,11 +1970,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logger.info('NAV', `Returned to ${originalRole} dashboard`);
   };
 
-  const logout = () => {
+  const logout = async () => {
     logger.info('AUTH', `Sign out: ${currentUser?.email || 'User'}`);
-    api.setToken(null);
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
+
+    // Call backend logout
+    try {
+      await api.auth.logout();
+    } catch (error) {
+      console.warn('Backend logout error:', error);
+      // Continue with local cleanup
+    }
+
     setCurrentUser(null);
     setIsAuthenticated(false);
     setActiveRole('STUDENT');

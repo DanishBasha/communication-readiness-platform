@@ -214,11 +214,14 @@ export const SuperAdminPortal: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
+
       const [col, progs, depts, stu] = await Promise.all([
         api.college.getDetails(collegeId),
         api.college.getPrograms(collegeId),
         api.college.getDepartments(collegeId),
-        api.admin.getStudents()
+        api.admin.getUsers({ role: 'STUDENT' }).then(users =>
+          users.length > 0 ? users : api.admin.getStudents()
+        ).catch(() => api.admin.getStudents())
       ]);
       setCollegeDetails(col);
       setPrograms(progs);
@@ -298,7 +301,12 @@ export const SuperAdminPortal: React.FC = () => {
       if (selectedProgramToCopy && copyEnrolledStudents) {
         const sourceProg = programs.find(p => p.id === selectedProgramToCopy);
         if (sourceProg) {
-          const allStudents = await api.admin.getStudents();
+          let allStudents: any[] = [];
+          try {
+            allStudents = await api.admin.getUsers({ role: 'STUDENT' });
+          } catch {
+            allStudents = await api.admin.getStudents();
+          }
           const targetSourceStudents = allStudents.filter(s => 
             (s.programName && s.programName.toLowerCase() === sourceProg.name.toLowerCase()) ||
             (s.track && s.track.toLowerCase().includes(sourceProg.name.toLowerCase())) ||

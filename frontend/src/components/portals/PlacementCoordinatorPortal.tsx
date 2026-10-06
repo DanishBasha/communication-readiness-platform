@@ -38,14 +38,7 @@ export const PlacementCoordinatorPortal: React.FC = () => {
   const [targetStudentForAssign, setTargetStudentForAssign] = useState<any | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [programs, setPrograms] = useState<DynamicProgram[]>([]);
-  const [candidates, setCandidates] = useState<any[]>(() => {
-    try {
-      const stored = localStorage.getItem('admin_students');
-      return stored ? JSON.parse(stored) : MOCK_MENTEES_LIST;
-    } catch {
-      return MOCK_MENTEES_LIST;
-    }
-  });
+  const [candidates, setCandidates] = useState<any[]>(MOCK_MENTEES_LIST);
 
   const calculateDynamicStats = (list: any[], progs: DynamicProgram[] = []) => {
     const total = list.length;
@@ -65,7 +58,9 @@ export const PlacementCoordinatorPortal: React.FC = () => {
     const fetchStats = async () => {
       try {
         const [list, progs] = await Promise.all([
-          api.admin.getStudents(),
+          api.admin.getUsers({ role: 'STUDENT' }).then(users =>
+            users.length > 0 ? users : api.admin.getStudents()
+          ).catch(() => api.admin.getStudents()),
           api.college.getPrograms(currentUser?.collegeId || 'col-1')
         ]);
         const currentProgs = progs || [];

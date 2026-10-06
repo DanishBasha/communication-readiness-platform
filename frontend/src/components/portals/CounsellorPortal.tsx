@@ -74,7 +74,9 @@ export const CounsellorPortal: React.FC = () => {
   useEffect(() => {
     const loadStudents = async () => {
       try {
-        const data = await api.admin.getStudents();
+        const data = await api.admin.getUsers({ role: 'STUDENT' }).then(users =>
+          users.length > 0 ? users : api.admin.getStudents()
+        ).catch(() => api.admin.getStudents());
         setStudents(data || []);
       } catch (err) {
         console.warn('Failed to load students for counsellor portal:', err);

@@ -60,7 +60,9 @@ export const FacultyMentorPortal: React.FC = () => {
     try {
       setLoading(true);
       const [list, progs] = await Promise.all([
-        api.admin.getMentorMentees(),
+        api.mentors.getMyStudents().then(students =>
+          students.length > 0 ? students : api.admin.getMentorMentees()
+        ).catch(() => api.admin.getMentorMentees()),
         api.college.getPrograms(currentUser?.collegeId || 'col-1')
       ]);
       if (list) {

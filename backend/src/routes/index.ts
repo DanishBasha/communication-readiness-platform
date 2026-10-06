@@ -5,6 +5,7 @@ import { studentRouter } from './student.routes';
 import { interviewRouter } from './interview.routes';
 import { portalRouter } from './portal.routes';
 import { orgRouter } from './org.routes';
+import { ownerRouter } from './owner.routes';
 import { mentorRouter } from './mentor.routes';
 import { trainerRouter } from './trainer.routes';
 import { adminRouter } from './admin.routes';
@@ -22,6 +23,9 @@ router.use('/auth', authRouter);
 
 // Org lookup endpoints are read-only and needed before login (e.g. batch list on registration form).
 router.use('/org', orgRouter);
+
+// Platform Owner routes — protected, requires PLATFORM_OWNER role
+router.use('/owner', authenticate, ownerRouter);
 
 // Protected — authenticate on every request; individual routes add authorize() as needed
 router.use('/students', authenticate, studentRouter);

@@ -5,14 +5,16 @@ import { env } from './env';
 // Postgres connections need more time than the default 2 s budget.
 // SSL is required by Supabase; rejectUnauthorized:false avoids self-signed
 // cert issues on the pooler end.
+const needsSsl = env.DATABASE_URL.includes('supabase.com')
+  || env.DATABASE_URL.includes('supabase.co')
+  || env.DATABASE_URL.includes('sslmode=require');
+
 export const db = new Pool({
   connectionString: env.DATABASE_URL,
   max: 30,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
-  ssl: env.DATABASE_URL.includes('supabase.com') || env.DATABASE_URL.includes('supabase.co')
-    ? { rejectUnauthorized: false }
-    : undefined,
+  ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
 });
 
 db.on('connect', () => {

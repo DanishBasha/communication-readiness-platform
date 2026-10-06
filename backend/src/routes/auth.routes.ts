@@ -196,3 +196,112 @@ authRouter.get('/me', authenticate, async (req: AuthRequest, res: Response): Pro
     sendError(res, err);
   }
 });
+
+// ── POST /api/auth/accept-invite ───────────────────────────────────────────────
+// Accept an invitation and create user account
+
+const acceptInviteSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8, 'Password must be at least 8 characters')
+});
+
+authRouter.post('/accept-invite', async (req: Request, res: Response): Promise<void> => {
+  const parsed = acceptInviteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    sendError(res, new AppError(422, 'Validation failed', 'VALIDATION_ERROR'));
+    return;
+  }
+
+  const { token, password } = parsed.data;
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Find invite by token
+    const inviteResult = await client.query(
+      `SELECT * FROM identity.invites
+       WHERE token = $1
+       AND status = 'PENDING'
+       AND expires_at > now()`,
+      [token]
+    );
+
+    if (inviteResult.rows.length === 0) {
+      throw new AppError(404, 'Invalid or expired invitation', 'INVALID_INVITE');
+    }
+
+    const invite = inviteResult.rows[0];
+
+    // Check if user already exists with this email
+    const existingUser = await client.query(
+      `SELECT id FROM identity.users WHERE email = $1`,
+      [invite.email]
+    );
+
+    if (existingUser.rows.length > 0) {
+      throw new AppError(409, 'User with this email already exists', 'USER_EXISTS');
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create user account
+    const userResult = await client.query(
+      `INSERT INTO identity.users (
+        name,
+        email,
+        password_hash,
+        role,
+        token_version,
+        status
+      ) VALUES ($1, $2, $3, $4, 0, 'ACTIVE')
+      RETURNING id, name, email, role, token_version`,
+      [invite.name, invite.email, passwordHash, invite.role]
+    );
+
+    const user = userResult.rows[0];
+
+    // Update invite status
+    await client.query(
+      `UPDATE identity.invites
+       SET status = 'ACCEPTED',
+           accepted_by_user_id = $1,
+           accepted_at = now()
+       WHERE id = $2`,
+      [user.id, invite.id]
+    );
+
+    await client.query('COMMIT');
+
+    // Generate JWT token
+    const authUser: AuthUser = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+      tokenVersion: user.token_version
+    };
+    const jwtToken = signToken(authUser);
+
+    sendSuccess(res, {
+      token: jwtToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      },
+      message: 'Invitation accepted successfully'
+    }, 201);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err instanceof AppError) {
+      sendError(res, err);
+      return;
+    }
+    sendError(res, err);
+  } finally {
+    client.release();
+  }
+});

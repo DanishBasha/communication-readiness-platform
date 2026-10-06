@@ -308,6 +308,7 @@ function synthesizeDynamicReport(
 
 class ApiClient {
   private token: string | null = null;
+  private readonly baseURL = '/api'; // Proxied by nginx in production
 
   constructor() {
     this.token = localStorage.getItem('auth_token');
@@ -339,138 +340,264 @@ class ApiClient {
     }
   }
 
+  private async fetchAPI<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> || {}),
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(`${this.baseURL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        // Unauthorized - clear token
+        this.setToken(null);
+        throw new Error('Authentication required');
+      }
+      const errorData = await response.json().catch(() => ({
+        message: response.statusText
+      }));
+      throw new Error(errorData.message || `API Error: ${response.status}`);
+    }
+
+    const body = await response.json();
+    return body.data !== undefined ? body.data : body;
+  }
+
   owner = {
     getColleges: async (): Promise<College[]> => {
-      return this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
+      try {
+        const response = await this.fetchAPI<{ institutions: any[] }>('/owner/institutions');
+        // Map backend response to frontend College interface
+        return response.institutions.map((inst: any) => ({
+          id: inst.id,
+          name: inst.name,
+          code: inst.code,
+          campusCity: inst.campus_city || '',
+          createdAt: inst.created_at,
+          // These fields will be populated when we fetch detailed info
+          superAdminStatus: undefined,
+          superAdminEmail: undefined,
+          superAdminName: undefined
+        }));
+      } catch (error) {
+        console.error('Failed to fetch institutions:', error);
+        // Fallback to empty array instead of mock data
+        return [];
+      }
     },
 
     createCollege: async (data: { name: string; code: string; campusCity: string }): Promise<College> => {
-      const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
-      const newCollege: College = {
-        id: `col-${Date.now()}`,
-        name: data.name,
-        code: data.code.toUpperCase(),
-        campusCity: data.campusCity,
-        createdAt: new Date().toISOString(),
-        superAdminStatus: 'PENDING_INVITE'
-      };
-      colleges.push(newCollege);
-      this.setStorage('platform_colleges', colleges);
+      try {
+        const response = await this.fetchAPI<{
+          institution: any;
+        }>('/owner/institutions', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: data.name,
+            code: data.code.toUpperCase(),
+            type: 'COLLEGE',
+            campusCity: data.campusCity
+          })
+        });
 
-      // Create default foundational departments for this college
-      const depts = this.getStorage<DynamicDepartment[]>('platform_departments', MOCK_DYNAMIC_DEPARTMENTS);
-      const initialDepts: DynamicDepartment[] = [
-        { id: `dept_${Date.now()}_1`, collegeId: newCollege.id, name: 'Computer Science & Engineering', code: 'CSE', adminPermissions: ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_MANAGE_STUDENTS'] },
-        { id: `dept_${Date.now()}_2`, collegeId: newCollege.id, name: 'Information Technology', code: 'IT', adminPermissions: ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_MANAGE_STUDENTS'] },
-        { id: `dept_${Date.now()}_3`, collegeId: newCollege.id, name: 'Electronics & Communication', code: 'ECE', adminPermissions: ['CAN_VIEW_STUDENT_PROGRESS'] }
-      ];
-      this.setStorage('platform_departments', [...depts, ...initialDepts]);
-
-      return newCollege;
+        const inst = response.institution;
+        return {
+          id: inst.id,
+          name: inst.name,
+          code: inst.code,
+          campusCity: inst.campusCity || inst.campus_city || '',
+          createdAt: inst.createdAt || inst.created_at,
+          superAdminStatus: 'PENDING_INVITE'
+        };
+      } catch (error) {
+        console.error('Failed to create institution:', error);
+        throw error;
+      }
     },
 
     inviteSuperAdmin: async (collegeId: string, data: { firstName: string; lastName: string; email: string }): Promise<{ invite: PendingInvite; inviteUrl: string }> => {
-      const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
-      const college = colleges.find(c => c.id === collegeId) || colleges[0];
-      const fullName = `${data.firstName} ${data.lastName}`.trim();
-      const token = `inv_sup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        const response = await this.fetchAPI<{
+          invite: any;
+          inviteUrl: string;
+        }>(`/owner/institutions/${collegeId}/invite`, {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
 
-      const invite: PendingInvite = {
-        token,
-        email: data.email.toLowerCase().trim(),
-        firstName: data.firstName,
-        lastName: data.lastName,
-        name: fullName,
-        role: 'SUPER_ADMIN',
-        collegeId: college.id,
-        collegeName: college.name,
-        permissions: ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING', 'CAN_MANAGE_STUDENTS'],
-        createdAt: new Date().toISOString(),
-        status: 'PENDING'
-      };
+        // Map backend invite to frontend PendingInvite
+        const invite: PendingInvite = {
+          token: response.invite.token,
+          email: response.invite.email,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          name: response.invite.name,
+          role: response.invite.role,
+          collegeId: response.invite.institutionId,
+          collegeName: response.invite.institutionName || '',
+          permissions: [],
+          createdAt: response.invite.createdAt,
+          status: response.invite.status,
+          expiresAt: response.invite.expiresAt
+        };
 
-      const invites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
-      invites.push(invite);
-      this.setStorage('platform_pending_invites', invites);
-
-      const colIdx = colleges.findIndex(c => c.id === collegeId);
-      if (colIdx !== -1) {
-        colleges[colIdx].superAdminEmail = data.email.toLowerCase().trim();
-        colleges[colIdx].superAdminName = fullName;
-        colleges[colIdx].superAdminStatus = 'PENDING_INVITE';
-        this.setStorage('platform_colleges', colleges);
+        return { invite, inviteUrl: response.inviteUrl };
+      } catch (error) {
+        console.error('Failed to invite Super Admin:', error);
+        throw error;
       }
-
-      const inviteUrl = `${window.location.origin}/?page=activate&invite_token=${token}`;
-      return { invite, inviteUrl };
     },
 
     getStats: async () => {
-      const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
-      const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
-      const programs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
-      const activeSuperAdmins = colleges.filter(c => c.superAdminStatus === 'ACTIVE').length;
+      try {
+        const response = await this.fetchAPI<{
+          totalInstitutions: number;
+          totalSuperAdmins: number;
+          activeSuperAdmins: number;
+          totalStudents: number;
+          totalPrograms: number;
+          pendingInvites: number;
+        }>('/owner/stats');
 
-      return {
-        totalColleges: colleges.length,
-        activeSuperAdmins: activeSuperAdmins || 2,
-        totalStudents: students.length || 240,
-        totalPrograms: programs.length || 3
-      };
+        return {
+          totalColleges: response.totalInstitutions,
+          activeSuperAdmins: response.activeSuperAdmins,
+          totalStudents: response.totalStudents,
+          totalPrograms: response.totalPrograms,
+          pendingInvites: response.pendingInvites
+        };
+      } catch (error) {
+        console.error('Failed to fetch platform stats:', error);
+        // Return zero values on error
+        return {
+          totalColleges: 0,
+          activeSuperAdmins: 0,
+          totalStudents: 0,
+          totalPrograms: 0,
+          pendingInvites: 0
+        };
+      }
     },
 
     deleteCollege: async (collegeId: string): Promise<void> => {
-      const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
-      const updated = colleges.filter(c => c.id !== collegeId);
-      this.setStorage('platform_colleges', updated);
-
-      const depts = this.getStorage<DynamicDepartment[]>('platform_departments', MOCK_DYNAMIC_DEPARTMENTS);
-      this.setStorage('platform_departments', depts.filter(d => d.collegeId !== collegeId));
-
-      const progs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
-      this.setStorage('platform_dynamic_programs', progs.filter(p => p.collegeId !== collegeId));
-
-      const invites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
-      this.setStorage('platform_pending_invites', invites.filter(i => i.collegeId !== collegeId));
+      // Institution deletion is not implemented per team decision
+      // See PLATFORM_OWNER_BACKEND_AUDIT_REPORT.md Section 5.2 Operation 12
+      throw new Error('Institution deletion requires team architecture decision and is not currently supported. Please contact system administrator.');
     },
 
     getCollegeProfileMetrics: async (collegeId: string) => {
-      const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
-      const college = colleges.find(c => c.id === collegeId) || colleges[0];
-      const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
-      const progs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS).filter(p => p.collegeId === collegeId);
-      const assignments = this.getStorage<InterviewAssignment[]>('assignments', MOCK_ASSIGNMENTS).filter(a => !a.collegeId || a.collegeId === collegeId);
+      try {
+        const response = await this.fetchAPI<{
+          institution: any;
+          metrics: {
+            programCount: number;
+            studentCount: number;
+            departmentCount: number;
+          };
+          superAdmin: any;
+          superAdminStatus: string;
+        }>(`/owner/institutions/${collegeId}`);
 
-      const collegeStudents = students.filter(s => !s.collegeId || s.collegeId === collegeId);
+        // Map backend institution to frontend College interface
+        const college: College = {
+          id: response.institution.id,
+          name: response.institution.name,
+          code: response.institution.code,
+          campusCity: response.institution.campus_city || '',
+          createdAt: response.institution.created_at,
+          superAdminStatus: response.superAdminStatus === 'ACTIVE' ? 'ACTIVE' :
+                           response.superAdminStatus === 'PENDING_INVITE' ? 'PENDING_INVITE' :
+                           undefined,
+          superAdminEmail: response.superAdmin?.email,
+          superAdminName: response.superAdmin?.name
+        };
 
-      return {
-        college,
-        enrolledStudentsCount: Math.max(collegeStudents.length, 120),
-        programsCreated: progs,
-        programsCount: progs.length,
-        totalAssignmentsCount: assignments.length,
-        tokenUsage: {
-          totalTokens: 2450800,
-          promptTokens: 1680400,
-          completionTokens: 770400,
-          audioMinutes: 342,
-          whisperHours: 5.7,
-          llmModel: 'Gemini 1.5 Flash + Whisper Pro',
-          status: 'Optimal (Within Tier Quota)'
-        }
-      };
+        // Fetch programs for this institution
+        const programsResponse = await this.fetchAPI<{ programs: any[] }>(`/owner/institutions/${collegeId}/programs`);
+
+        return {
+          college,
+          enrolledStudentsCount: response.metrics.studentCount,
+          programsCreated: programsResponse.programs,
+          programsCount: response.metrics.programCount,
+          totalAssignmentsCount: 0, // Not tracked in backend yet
+          tokenUsage: {
+            // Token usage not implemented yet - return placeholder
+            totalTokens: 0,
+            promptTokens: 0,
+            completionTokens: 0,
+            audioMinutes: 0,
+            whisperHours: 0,
+            llmModel: 'Not tracked',
+            status: 'Not implemented'
+          }
+        };
+      } catch (error) {
+        console.error('Failed to fetch institution metrics:', error);
+        throw error;
+      }
     }
   };
 
   college = {
     getDetails: async (collegeId = 'col-1'): Promise<College> => {
-      const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
-      return colleges.find(c => c.id === collegeId) || colleges[0];
+      try {
+        const response = await this.fetchAPI<{
+          institution: any;
+          superAdmin: any;
+          superAdminStatus: string;
+        }>(`/owner/institutions/${collegeId}`);
+
+        return {
+          id: response.institution.id,
+          name: response.institution.name,
+          code: response.institution.code,
+          campusCity: response.institution.campus_city || '',
+          createdAt: response.institution.created_at,
+          superAdminStatus: response.superAdminStatus === 'ACTIVE' ? 'ACTIVE' :
+                           response.superAdminStatus === 'PENDING_INVITE' ? 'PENDING_INVITE' :
+                           undefined,
+          superAdminEmail: response.superAdmin?.email,
+          superAdminName: response.superAdmin?.name
+        };
+      } catch (error) {
+        console.error('Failed to fetch institution details:', error);
+        // Fallback to localStorage for backward compatibility during transition
+        const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
+        return colleges.find(c => c.id === collegeId) || colleges[0];
+      }
     },
 
     getDepartments: async (collegeId = 'col-1'): Promise<DynamicDepartment[]> => {
-      const depts = this.getStorage<DynamicDepartment[]>('platform_departments', MOCK_DYNAMIC_DEPARTMENTS);
-      return depts.filter(d => d.collegeId === collegeId);
+      try {
+        const response = await this.fetchAPI<{ departments: any[] }>(`/owner/institutions/${collegeId}/departments`);
+        return response.departments.map((dept: any) => ({
+          id: dept.id,
+          collegeId: collegeId,
+          name: dept.name,
+          code: dept.code,
+          assignedAdminEmail: dept.assigned_admin_email,
+          assignedAdminName: dept.assigned_admin_name,
+          adminPermissions: dept.admin_permissions || ['CAN_VIEW_STUDENT_PROGRESS'],
+          isActive: dept.is_active
+        }));
+      } catch (error) {
+        console.error('Failed to fetch departments:', error);
+        // Fallback to localStorage for backward compatibility
+        const depts = this.getStorage<DynamicDepartment[]>('platform_departments', MOCK_DYNAMIC_DEPARTMENTS);
+        return depts.filter(d => d.collegeId === collegeId);
+      }
     },
 
     createDepartment: async (collegeId: string, data: { name: string; code: string; assignedAdminEmail?: string; assignedAdminName?: string; adminPermissions?: AdminPermission[] }): Promise<DynamicDepartment> => {
@@ -996,7 +1123,29 @@ class ApiClient {
 
   invites = {
     getAll: async (): Promise<PendingInvite[]> => {
-      return this.getStorage<PendingInvite[]>('platform_pending_invites', []);
+      try {
+        const response = await this.fetchAPI<{ invites: any[] }>('/owner/invites');
+        // Map backend invites to frontend PendingInvite interface
+        return response.invites.map((inv: any) => ({
+          token: inv.token,
+          email: inv.email,
+          firstName: inv.first_name,
+          lastName: inv.last_name,
+          name: inv.name,
+          role: inv.role,
+          collegeId: inv.institution_id,
+          collegeName: '', // Will need to fetch institution name separately if needed
+          programId: inv.program_id,
+          department: inv.department,
+          permissions: inv.permissions || [],
+          createdAt: inv.created_at,
+          status: inv.status,
+          expiresAt: inv.expires_at
+        }));
+      } catch (error) {
+        console.error('Failed to fetch invites:', error);
+        return [];
+      }
     },
 
     getByToken: async (token: string): Promise<PendingInvite | null> => {
@@ -1020,67 +1169,100 @@ class ApiClient {
     },
 
     completePasswordSetup: async (token: string, password: string): Promise<{ user: AuthUser; token: string }> => {
-      const invites = this.getStorage<PendingInvite[]>('platform_pending_invites', []);
-      const invIdx = invites.findIndex(inv => inv.token === token);
-      let invite: PendingInvite;
-      if (invIdx === -1) {
-        if (token && token.toLowerCase().includes('demo')) {
-          invite = {
-            token,
-            email: 'admin.new@college.edu',
-            role: 'SUPER_ADMIN',
-            collegeId: 'col-1',
-            collegeName: 'National Institute of Technology',
-            name: 'Dr. Sarah Jenkins',
-            status: 'ACCEPTED',
-            createdAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 86400000 * 3).toISOString()
+      try {
+        const response = await this.fetchAPI<{
+          token: string;
+          user: {
+            id: string;
+            name: string;
+            email: string;
+            role: string;
           };
-        } else {
-          throw new Error('Invalid or expired activation link.');
+          message: string;
+        }>('/auth/accept-invite', {
+          method: 'POST',
+          body: JSON.stringify({ token, password })
+        });
+
+        // Store token
+        this.setToken(response.token);
+
+        // Map to AuthUser
+        const userRecord: AuthUser = {
+          id: response.user.id,
+          name: response.user.name,
+          email: response.user.email,
+          role: response.user.role as any
+        };
+
+        localStorage.setItem('auth_user', JSON.stringify(userRecord));
+
+        return { user: userRecord, token: response.token };
+      } catch (error) {
+        console.error('Failed to accept invitation:', error);
+        throw error;
+      }
+    }
+  };
+
+  org = {
+    getInstitutions: async (): Promise<any[]> => {
+      try {
+        const response = await fetch(`${this.baseURL}/org/institutions`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch institutions: ${response.statusText}`);
         }
-      } else {
-        invite = invites[invIdx];
-        invite.status = 'ACCEPTED';
-        this.setStorage('platform_pending_invites', invites);
+        const data = await response.json();
+        return data.items || [];
+      } catch (error) {
+        console.error('Get institutions error:', error);
+        return [];
       }
+    },
 
-      const users = this.getStorage<any[]>('college_registered_users', []);
-      const existingIdx = users.findIndex(u => u.email.toLowerCase().trim() === invite.email.toLowerCase().trim());
-
-      const userRecord: AuthUser = {
-        id: `usr_${Date.now()}`,
-        name: invite.name,
-        email: invite.email,
-        role: invite.role,
-        collegeId: invite.collegeId,
-        collegeName: invite.collegeName,
-        programId: invite.programId,
-        department: invite.department,
-        permissions: invite.permissions || ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS']
-      };
-
-      if (existingIdx !== -1) {
-        users[existingIdx] = { ...users[existingIdx], ...userRecord, password };
-      } else {
-        users.push({ ...userRecord, password });
-      }
-      this.setStorage('college_registered_users', users);
-
-      if (invite.role === 'SUPER_ADMIN' && invite.collegeId) {
-        const colleges = this.getStorage<College[]>('platform_colleges', MOCK_COLLEGES);
-        const colIdx = colleges.findIndex(c => c.id === invite.collegeId);
-        if (colIdx !== -1) {
-          colleges[colIdx].superAdminStatus = 'ACTIVE';
-          this.setStorage('platform_colleges', colleges);
+    getPrograms: async (institutionId?: string): Promise<any[]> => {
+      try {
+        const params = institutionId ? `?institution_id=${institutionId}` : '';
+        const response = await fetch(`${this.baseURL}/org/programs${params}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch programs: ${response.statusText}`);
         }
+        const data = await response.json();
+        return data.items || [];
+      } catch (error) {
+        console.error('Get programs error:', error);
+        return [];
       }
+    },
 
-      const jwtToken = `jwt_act_${Date.now()}`;
-      this.setToken(jwtToken);
-      localStorage.setItem('auth_user', JSON.stringify(userRecord));
+    getBatches: async (programId?: string): Promise<any[]> => {
+      try {
+        const params = programId ? `?program_id=${programId}` : '';
+        const response = await fetch(`${this.baseURL}/org/batches${params}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch batches: ${response.statusText}`);
+        }
+        const data = await response.json();
+        return data.items || [];
+      } catch (error) {
+        console.error('Get batches error:', error);
+        return [];
+      }
+    },
 
-      return { user: userRecord, token: jwtToken };
+    getSubdivisions: async (batchId?: string): Promise<any[]> => {
+      try {
+        const params = batchId ? `?batch_id=${batchId}` : '';
+        const response = await fetch(`${this.baseURL}/org/subdivisions${params}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch subdivisions: ${response.statusText}`);
+        }
+        const data = await response.json();
+        return data.items || [];
+      } catch (error) {
+        console.error('Get subdivisions error:', error);
+        return [];
+      }
     }
   };
 
@@ -1468,147 +1650,62 @@ class ApiClient {
   };
 
   auth = {
-    login: async (email: string, _password?: string) => {
-      const normalizedEmail = email.toLowerCase().trim();
-      const users = this.getStorage<any[]>('college_registered_users', []);
-      const matched = users.find(u => u.email.toLowerCase().trim() === normalizedEmail);
+    login: async (email: string, password: string) => {
+      try {
+        // Call real backend authentication
+        const response = await this.fetchAPI<{
+          token: string;
+          user: { id: string; name: string; email: string; role: string };
+          studentId: string | null;
+        }>('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
 
-      const dynamicProgs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
-      const matchedProg = dynamicProgs.find(p => 
-        (p.assignedAdminEmail && p.assignedAdminEmail.toLowerCase().trim() === normalizedEmail) ||
-        normalizedEmail === `${p.code.toLowerCase()}@college.edu` ||
-        normalizedEmail === `${p.name.toLowerCase().replace(/\s+/g, '')}@college.edu` ||
-        (normalizedEmail.includes('hope') && p.code.toLowerCase() === 'hope') ||
-        (normalizedEmail.includes(p.code.toLowerCase()) && normalizedEmail.includes('admin'))
-      );
+        // Store token
+        this.setToken(response.token);
+        localStorage.setItem('auth_user', JSON.stringify(response.user));
 
-      const dynamicDepts = this.getStorage<DynamicDepartment[]>('platform_departments', MOCK_DYNAMIC_DEPARTMENTS);
-      const matchedDept = dynamicDepts.find(d =>
-        (d.assignedAdminEmail && d.assignedAdminEmail.toLowerCase().trim() === normalizedEmail) ||
-        normalizedEmail === `admin.${d.code.toLowerCase()}@college.edu` ||
-        (normalizedEmail.includes(d.code.toLowerCase()) && normalizedEmail.includes('admin'))
-      );
+        return {
+          user: response.user,
+          token: response.token,
+          studentId: response.studentId
+        };
+      } catch (error) {
+        console.error('Login error:', error);
+        throw new Error(error instanceof Error ? error.message : 'Login failed');
+      }
+    },
 
-      let role: any = 'STUDENT';
-      let name = 'Student Candidate';
-      let studentId = `stu_${Date.now().toString().slice(-4)}`;
-      let permissions: AdminPermission[] | undefined = undefined;
-      let collegeId: string | undefined = undefined;
-      let collegeName: string | undefined = undefined;
-      let programId: string | undefined = undefined;
-      let programName: string | undefined = undefined;
-      let department: string | undefined = undefined;
-      let className: string | undefined = undefined;
-      let assignedClassName: string | undefined = undefined;
-      let assignedClasses: string[] | undefined = undefined;
-      let isIndependent: boolean = false;
-
-      if (normalizedEmail === 'owner@platform.com' || normalizedEmail.includes('owner')) {
-        role = 'PLATFORM_OWNER';
-        name = 'Danish Basha (Platform Owner)';
-      } else if (matched) {
-        role = matched.role;
-        name = matched.name;
-        studentId = matched.studentId || studentId;
-        permissions = matched.permissions;
-        collegeId = matched.collegeId;
-        collegeName = matched.collegeName;
-        programId = matched.programId;
-        programName = matched.programName;
-        department = matched.department;
-        className = matched.className;
-        assignedClassName = matched.assignedClassName;
-        assignedClasses = matched.assignedClasses;
-        isIndependent = matched.isIndependent || false;
-      } else if (normalizedEmail.includes('counselor') || normalizedEmail.includes('counsellor') || normalizedEmail.includes('vijayalakshmi')) {
-        role = 'COUNSELLOR';
-        name = 'Dr. B. Vijayalakshmi';
-        collegeId = 'col-1';
-        collegeName = "St. Joseph's College of Engineering";
-        department = 'Information Technology';
-        assignedClassName = '2nd Year IT - Section A';
-        assignedClasses = ['2nd Year IT - Section A'];
-        permissions = ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS'];
-      } else if (normalizedEmail.includes('admin.it') || (normalizedEmail.includes('dept') && normalizedEmail.includes('admin'))) {
-        role = 'DEPARTMENT_ADMIN';
-        name = 'Prof. S. Natarajan (HOD IT)';
-        collegeId = 'col-1';
-        collegeName = "St. Joseph's College of Engineering";
-        department = 'Information Technology';
-        permissions = ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_MANAGE_STUDENTS'];
-      } else if (matchedProg) {
-        role = 'PROGRAM_ADMIN';
-        name = matchedProg.assignedAdminName || `${matchedProg.name} Administrator`;
-        collegeId = matchedProg.collegeId || 'col-1';
-        collegeName = "St. Joseph's College of Engineering";
-        programId = matchedProg.id;
-        programName = matchedProg.name;
-        permissions = matchedProg.adminPermissions || ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING', 'CAN_MANAGE_STUDENTS'];
-      } else if (matchedDept) {
-        role = 'DEPARTMENT_ADMIN';
-        name = matchedDept.assignedAdminName || `${matchedDept.name} HOD / Admin`;
-        collegeId = matchedDept.collegeId || 'col-1';
-        collegeName = "St. Joseph's College of Engineering";
-        department = matchedDept.name;
-        permissions = matchedDept.adminPermissions || ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_MANAGE_STUDENTS'];
-      } else if (normalizedEmail.includes('superadmin') || normalizedEmail.includes('admin@college.edu')) {
-        role = 'SUPER_ADMIN';
-        name = 'Dr. Rajesh Nair (Super Admin)';
-        collegeId = 'col-1';
-        collegeName = "St. Joseph's College of Engineering";
-        permissions = ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING', 'CAN_MANAGE_STUDENTS'];
-      } else if (normalizedEmail.includes('coord') || normalizedEmail.includes('placement')) {
-        role = 'PLACEMENT_COORDINATOR';
-        name = 'Prof. S. Ranganathan';
-        collegeId = 'col-1';
-      } else if (normalizedEmail.includes('prog') || normalizedEmail.includes('program')) {
-        role = 'PROGRAM_ADMIN';
-        name = 'Dr. K. Swaminathan';
-        collegeId = 'col-1';
-        programId = 'prog-hope';
-        programName = 'Hope';
-        permissions = ['CAN_VIEW_STUDENT_PROGRESS', 'CAN_ASSIGN_INTERVIEWS', 'CAN_ASSIGN_LISTENING', 'CAN_MANAGE_STUDENTS'];
-      } else if (normalizedEmail.includes('mentor') || normalizedEmail.includes('faculty')) {
-        role = 'FACULTY_MENTOR';
-        name = 'Dr. Ananya Sharma';
-        collegeId = 'col-1';
-      } else if (normalizedEmail.includes('candidate') || normalizedEmail.includes('external')) {
-        role = 'STUDENT';
-        name = 'Independent Candidate';
-        isIndependent = true;
-      } else {
-        role = 'STUDENT';
-        name = normalizedEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        collegeId = 'col-1';
+    logout: async () => {
+      try {
+        // Call backend logout to invalidate token
+        await this.fetchAPI('/auth/logout', {
+          method: 'POST'
+        });
+      } catch (error) {
+        console.warn('Logout backend call failed:', error);
+        // Continue with local cleanup even if backend call fails
       }
 
-      const activeUser: AuthUser = {
-        id: matched?.id || `usr_${Date.now()}`,
-        name,
-        email: normalizedEmail,
-        role,
-        studentId,
-        permissions,
-        collegeId,
-        collegeName,
-        programId,
-        programName,
-        department,
-        className,
-        assignedClassName,
-        assignedClasses,
-        isIndependent
-      };
+      // Clear local storage
+      this.setToken(null);
+      localStorage.removeItem('auth_user');
+    },
 
-      const token = `jwt_dyn_${Date.now()}`;
-      this.setToken(token);
-      localStorage.setItem('auth_user', JSON.stringify(activeUser));
+    getMe: async () => {
+      try {
+        const response = await this.fetchAPI<{
+          user: { id: string; name: string; email: string; role: string };
+          studentId: string | null;
+        }>('/auth/me');
 
-      return {
-        user: activeUser,
-        token,
-        studentId
-      };
+        localStorage.setItem('auth_user', JSON.stringify(response.user));
+        return response;
+      } catch (error) {
+        console.error('Get current user error:', error);
+        throw error;
+      }
     },
 
     registerCandidate: async (candidateData: { name: string; email: string; password?: string }) => {
@@ -1888,150 +1985,186 @@ class ApiClient {
 
   student = {
     getProfile: async (studentId?: string): Promise<StudentProfile> => {
-      const key = studentId ? `student_profile_${studentId}` : 'student_profile';
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        try { return JSON.parse(stored); } catch {}
-      }
+      try {
+        // Call real backend API
+        const endpoint = studentId ? `/students/${studentId}` : '/students/me';
+        const response = await this.fetchAPI<{ student: any }>(endpoint);
+        const s = response.student;
 
-      // If a specific studentId is provided, look up from admin student list / mock mentees
-      if (studentId) {
-        const adminStudents = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
-        const match = adminStudents.find((s: any) => s.id === studentId || s.rollNumber === studentId || s.studentId === studentId);
-        if (match) {
-          const profile: StudentProfile = {
-            id: match.id || studentId,
-            name: match.name || 'Candidate Student',
-            rollNumber: match.rollNumber || match.roll_number || '22CS1001',
-            email: match.email || `${(match.name || 'student').toLowerCase().replace(/\s+/g, '.')}@college.edu`,
-            department: match.department || 'Computer Science & Engineering',
-            batchYear: match.batchYear || match.batch_year || 2026,
-            track: match.track || match.domain || 'General Track',
-            programId: match.programId,
-            programName: match.programName,
-            subProgramName: match.subProgramName,
-            mentorName: match.mentorName || match.mentor_name || 'Dr. S. Ranganathan',
-            mentorEmail: match.mentorEmail || match.mentor_email || 'ranganathan.s@college.edu',
-            codingHandles: match.codingHandles || { leetcodeSolved: 110, githubRepos: 12 },
-            resume: match.resume || null,
-            criteriaTasks: match.criteriaTasks || INITIAL_CRITERIA_TASKS,
-            improvementChecklist: match.improvementChecklist || [
-              { id: 'imp-1', week: 'Week 1', title: 'Speed & Fluency Modulation', description: 'Maintain 130-150 words per minute during system design intros.', isCompleted: true, completedAt: '2026-09-21' },
-              { id: 'imp-2', week: 'Week 2', title: 'Database Composite Index Trade-offs', description: 'Articulate B-Tree left-prefix rule without filler words.', isCompleted: true, completedAt: '2026-09-24' },
-              { id: 'imp-3', week: 'Week 3', title: 'Microservices Distributed Transaction', description: 'Explain Saga orchestration pattern with failure compensation steps.', isCompleted: false },
-              { id: 'imp-4', week: 'Week 4', title: 'FAANG Executive Communication', description: 'Lead end-to-end cloud scalability architectural review under time pressure.', isCompleted: false }
-            ],
-            recentReports: match.recentReports || [
-              {
-                id: 'rep-001',
-                date: '2026-09-26',
-                sessionType: 'MOCK_INTERVIEW',
-                overallScore: match.score || match.overallReadiness || 82,
-                technicalScore: 86,
-                communicationScore: 78,
-                averageWpm: 124,
-                totalFillerWords: 9,
-                fillerWordBreakdown: { 'um': 4, 'like': 3, 'you know': 2 },
-                skillBreakdown: [
-                  { skill: 'Core Technical Proficiency', score: 88, status: 'STRONG', recommendation: 'Clear mastery of architecture' },
-                  { skill: 'Verbal Fluency & Delivery', score: 76, status: 'MODERATE', recommendation: 'Reduce filler words during transitions' }
-                ],
-                actionableNextSteps: [
-                  'Pause 2 seconds before answering rather than saying "um"',
-                  'Practice explaining trade-offs concisely'
-                ],
-                tabSwitches: 0,
-                isFlagged: false
-              }
-            ],
-            overallReadiness: match.overallReadiness ?? match.score ?? 82,
-            coins: match.coins ?? 5
-          };
-          this.setStorage(`student_profile_${studentId}`, profile);
-          return profile;
+        // Map backend response to frontend StudentProfile model
+        const profile: StudentProfile = {
+          id: s.id,
+          name: s.name,
+          email: s.email,
+          rollNumber: s.roll_number || '',
+          department: s.department || 'Computer Science & Engineering',
+          batchYear: s.batch_year || 2026,
+          track: s.track || 'General Track',
+          programId: s.program_id,
+          programName: s.program_name,
+          subProgramName: s.sub_program_name,
+          mentorName: s.mentor_name || 'Not Assigned',
+          mentorEmail: s.mentor_email || '',
+          codingHandles: s.coding_handles || { leetcodeSolved: 0, githubRepos: 0 },
+          resume: s.resume || null,
+          criteriaTasks: INITIAL_CRITERIA_TASKS, // Backend doesn't have this yet
+          improvementChecklist: [], // Backend doesn't have this yet
+          recentReports: s.recent_reports || [],
+          overallReadiness: s.overall_readiness || 0,
+          coins: s.coins || 0
+        };
+
+        // Cache in localStorage as backup
+        this.setStorage(`student_profile_${profile.id}`, profile);
+        return profile;
+      } catch (error) {
+        console.error('Failed to fetch student profile from backend:', error);
+
+        // Fallback to localStorage if backend fails
+        const key = studentId ? `student_profile_${studentId}` : 'student_profile';
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          try { return JSON.parse(stored); } catch {}
         }
-      }
 
-      const general = localStorage.getItem('student_profile');
-      if (general) {
-        try { return JSON.parse(general); } catch {}
+        // Last resort: return initial profile
+        return INITIAL_STUDENT_PROFILE;
       }
-      return INITIAL_STUDENT_PROFILE;
     },
 
     updateProfile: async (studentId: string, updates: Partial<StudentProfile>): Promise<StudentProfile> => {
-      const current = await this.student.getProfile(studentId);
-      const updated = { ...current, ...updates };
-      this.setStorage(`student_profile_${studentId}`, updated);
-      this.setStorage('student_profile', updated);
-      return updated;
+      try {
+        // Update via backend API
+        const response = await this.fetchAPI<{ student: any }>(`/students/${studentId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        });
+
+        const updated = await this.student.getProfile(studentId);
+        return updated;
+      } catch (error) {
+        console.error('Failed to update student profile:', error);
+
+        // Fallback to localStorage
+        const current = await this.student.getProfile(studentId);
+        const updated = { ...current, ...updates };
+        this.setStorage(`student_profile_${studentId}`, updated);
+        this.setStorage('student_profile', updated);
+        return updated;
+      }
     },
 
     updateCodingHandles: async (studentId: string, handles: CodingHandles): Promise<void> => {
-      const current = await this.student.getProfile(studentId);
-      current.codingHandles = { ...current.codingHandles, ...handles };
-      this.setStorage(`student_profile_${studentId}`, current);
-      this.setStorage('student_profile', current);
+      try {
+        // Update via backend API
+        await this.fetchAPI(`/students/${studentId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ codingHandles: handles }),
+        });
 
-      const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
-      const idx = students.findIndex(s => s.id === studentId || s.name === current.name);
-      if (idx !== -1) {
-        students[idx].codingHandles = current.codingHandles;
-        this.setStorage('admin_students', students);
+        // Update localStorage cache
+        const current = await this.student.getProfile(studentId);
+        current.codingHandles = { ...current.codingHandles, ...handles };
+        this.setStorage(`student_profile_${studentId}`, current);
+        this.setStorage('student_profile', current);
+      } catch (error) {
+        console.error('Failed to update coding handles:', error);
+
+        // Fallback to localStorage only
+        const current = await this.student.getProfile(studentId);
+        current.codingHandles = { ...current.codingHandles, ...handles };
+        this.setStorage(`student_profile_${studentId}`, current);
+        this.setStorage('student_profile', current);
       }
     },
 
     uploadResume: async (
-      studentId: string, 
+      studentId: string,
       payload: FormData | { resumeText: string; fileName?: string } | ParsedResume
     ): Promise<ParsedResume> => {
-      let parsed: ParsedResume;
+      try {
+        // If payload is FormData, upload to backend
+        if (payload instanceof FormData) {
+          const headers: HeadersInit = {};
+          if (this.token) {
+            headers['Authorization'] = `Bearer ${this.token}`;
+          }
 
-      if ('skills' in payload && 'projects' in payload) {
-        parsed = payload as ParsedResume;
-      } else {
-        const rawText = (payload as any)?.resumeText || '';
-        const fileName = (payload as any)?.fileName || 'Uploaded_Resume.pdf';
-        
-        const extractedLanguages: string[] = [];
-        const langMap = ['Python', 'Java', 'TypeScript', 'JavaScript', 'C++', 'Go', 'Rust', 'SQL', 'C#', 'PHP'];
-        langMap.forEach(l => {
-          if (new RegExp(`\\b${l}\\b`, 'i').test(rawText)) extractedLanguages.push(l);
-        });
+          const response = await fetch(`${this.baseURL}/students/${studentId}/resume`, {
+            method: 'PATCH',
+            headers,
+            body: payload, // Don't set Content-Type, let browser set multipart boundary
+          });
 
-        const extractedFrameworks: string[] = [];
-        const frameMap = ['React', 'Node.js', 'Spring Boot', 'FastAPI', 'Express', 'Django', 'Docker', 'Kubernetes', 'Tailwind', 'Next.js', 'PyTorch', 'TensorFlow'];
-        frameMap.forEach(f => {
-          if (new RegExp(`\\b${f.replace('.', '\\.')}\\b`, 'i').test(rawText)) extractedFrameworks.push(f);
-        });
+          if (!response.ok) {
+            throw new Error(`Resume upload failed: ${response.statusText}`);
+          }
 
-        parsed = {
-          fileName,
-          parsedAt: new Date().toISOString().split('T')[0],
-          summary: extractedLanguages.length > 0 
-            ? `Specialized candidate with expertise in ${extractedLanguages.join(', ')} and ${extractedFrameworks.slice(0, 3).join(', ')}.`
-            : 'Software Engineering candidate with hands-on full-stack development experience.',
-          skills: {
-            languages: extractedLanguages.length > 0 ? extractedLanguages : ['Java', 'TypeScript', 'SQL', 'Python'],
-            frameworks: extractedFrameworks.length > 0 ? extractedFrameworks : ['Spring Boot', 'React', 'Tailwind CSS', 'Docker'],
-            databases: ['PostgreSQL', 'Redis'],
-            tools: ['Git', 'Docker', 'Kafka']
-          },
-          projects: [
-            {
-              title: rawText.includes('Platform') ? 'Communication & Placement Engine' : 'High-Throughput Distributed Microservice',
-              description: 'Designed and deployed low-latency transactional workflows with automated telemetry and resilience testing.',
-              techStack: extractedLanguages.concat(extractedFrameworks).slice(0, 4)
-            }
-          ]
-        };
+          const data = await response.json();
+
+          // Refresh profile to get updated resume
+          const updated = await this.student.getProfile(studentId);
+          return updated.resume || {
+            fileName: 'Uploaded Resume',
+            parsedAt: new Date().toISOString().split('T')[0],
+            summary: 'Resume uploaded successfully',
+            skills: { languages: [], frameworks: [], databases: [], tools: [] },
+            projects: []
+          };
+        }
+
+        // Otherwise, use client-side parsing (fallback/mock behavior)
+        let parsed: ParsedResume;
+
+        if ('skills' in payload && 'projects' in payload) {
+          parsed = payload as ParsedResume;
+        } else {
+          const rawText = (payload as any)?.resumeText || '';
+          const fileName = (payload as any)?.fileName || 'Uploaded_Resume.pdf';
+
+          const extractedLanguages: string[] = [];
+          const langMap = ['Python', 'Java', 'TypeScript', 'JavaScript', 'C++', 'Go', 'Rust', 'SQL', 'C#', 'PHP'];
+          langMap.forEach(l => {
+            if (new RegExp(`\\b${l}\\b`, 'i').test(rawText)) extractedLanguages.push(l);
+          });
+
+          const extractedFrameworks: string[] = [];
+          const frameMap = ['React', 'Node.js', 'Spring Boot', 'FastAPI', 'Express', 'Django', 'Docker', 'Kubernetes', 'Tailwind', 'Next.js', 'PyTorch', 'TensorFlow'];
+          frameMap.forEach(f => {
+            if (new RegExp(`\\b${f.replace('.', '\\.')}\\b`, 'i').test(rawText)) extractedFrameworks.push(f);
+          });
+
+          parsed = {
+            fileName,
+            parsedAt: new Date().toISOString().split('T')[0],
+            summary: extractedLanguages.length > 0
+              ? `Specialized candidate with expertise in ${extractedLanguages.join(', ')} and ${extractedFrameworks.slice(0, 3).join(', ')}.`
+              : 'Software Engineering candidate with hands-on full-stack development experience.',
+            skills: {
+              languages: extractedLanguages.length > 0 ? extractedLanguages : ['Java', 'TypeScript', 'SQL', 'Python'],
+              frameworks: extractedFrameworks.length > 0 ? extractedFrameworks : ['Spring Boot', 'React', 'Tailwind CSS', 'Docker'],
+              databases: ['PostgreSQL', 'Redis'],
+              tools: ['Git', 'Docker', 'Kafka']
+            },
+            projects: [
+              {
+                title: rawText.includes('Platform') ? 'Communication & Placement Engine' : 'High-Throughput Distributed Microservice',
+                description: 'Designed and deployed low-latency transactional workflows with automated telemetry and resilience testing.',
+                techStack: extractedLanguages.concat(extractedFrameworks).slice(0, 4)
+              }
+            ]
+          };
+        }
+
+        const current = await this.student.getProfile(studentId);
+        current.resume = parsed;
+        this.setStorage(`student_profile_${studentId}`, current);
+        this.setStorage('student_profile', current);
+        return parsed;
+      } catch (error) {
+        console.error('Failed to upload resume:', error);
+        throw error;
       }
-
-      const current = await this.student.getProfile(studentId);
-      current.resume = parsed;
-      this.setStorage(`student_profile_${studentId}`, current);
-      this.setStorage('student_profile', current);
-      return parsed;
     }
   };
 
@@ -2191,6 +2324,40 @@ class ApiClient {
   };
 
   listening = {
+    // Backend-integrated methods for fetching listening stories
+    getStories: async (difficulty?: string): Promise<any[]> => {
+      try {
+        const params = difficulty ? `?difficulty=${difficulty}` : '';
+        const response = await this.fetchAPI<{ stories: any[] }>(
+          `/listening${params}`
+        );
+        return response.stories || [];
+      } catch (error) {
+        console.error('Get listening stories error:', error);
+        // Fallback to mock data
+        return LISTENING_PASSAGES.map((p, i) => ({
+          id: `story_${i + 1}`,
+          title: p.title,
+          content: p.narrativeText,
+          difficulty: 'MEDIUM',
+          questions: p.questions
+        }));
+      }
+    },
+
+    getStoryById: async (id: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ story: any }>(
+          `/listening/${id}`
+        );
+        return response.story;
+      } catch (error) {
+        console.error('Get listening story error:', error);
+        throw error;
+      }
+    },
+
+    // Existing localStorage-based session management (kept for current workflow)
     start: async (_studentId: string, passageIndex?: number) => {
       const pIdx = passageIndex !== undefined ? (passageIndex % LISTENING_PASSAGES.length) : Math.floor(Math.random() * LISTENING_PASSAGES.length);
       const selectedPassage = LISTENING_PASSAGES[pIdx];
@@ -2359,6 +2526,58 @@ class ApiClient {
   };
 
   admin = {
+    // Backend-integrated methods
+    getUsers: async (filters: { role?: string; status?: string; search?: string } = {}): Promise<any[]> => {
+      try {
+        const params = new URLSearchParams();
+        if (filters.role) params.append('role', filters.role);
+        if (filters.status) params.append('status', filters.status);
+        if (filters.search) params.append('search', filters.search);
+
+        const queryString = params.toString();
+        const response = await this.fetchAPI<{ users: any[] }>(
+          `/admin/users${queryString ? `?${queryString}` : ''}`
+        );
+        return response.users || [];
+      } catch (error) {
+        console.error('Get users error:', error);
+        return [];
+      }
+    },
+
+    updateUserRole: async (userId: string, role: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ user: any }>(
+          `/admin/users/${userId}/role`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ role })
+          }
+        );
+        return response.user;
+      } catch (error) {
+        console.error('Update user role error:', error);
+        throw error;
+      }
+    },
+
+    updateUserStatus: async (userId: string, status: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ user: any }>(
+          `/admin/users/${userId}/status`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ status })
+          }
+        );
+        return response.user;
+      } catch (error) {
+        console.error('Update user status error:', error);
+        throw error;
+      }
+    },
+
+    // Existing localStorage-based methods (kept for demo/fallback)
     getCoordinatorStats: async () => {
       const students = this.getStorage<any[]>('admin_students', MOCK_MENTEES_LIST);
       const programs = this.getStorage<DynamicProgram[]>('platform_dynamic_programs', MOCK_DYNAMIC_PROGRAMS);
@@ -2685,6 +2904,236 @@ class ApiClient {
       return this.college.getPrograms(collegeId);
     }
   };
+
+  mentors = {
+    assignStudent: async (studentId: string, mentorId: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ assignment: any }>(
+          '/mentors/assign',
+          {
+            method: 'POST',
+            body: JSON.stringify({ studentId, mentorId })
+          }
+        );
+        return response.assignment;
+      } catch (error) {
+        console.error('Assign mentor error:', error);
+        throw error;
+      }
+    },
+
+    getMyStudents: async (): Promise<any[]> => {
+      try {
+        const response = await this.fetchAPI<{ students: any[] }>(
+          '/mentors/my-students'
+        );
+        return response.students || [];
+      } catch (error) {
+        console.error('Get mentor students error:', error);
+        return [];
+      }
+    }
+  };
+
+  trainers = {
+    assignTrainer: async (data: {
+      trainerId: string;
+      subdivisionId: string;
+      startDate: string;
+      endDate?: string;
+    }): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ assignment: any }>(
+          '/trainers/assign',
+          {
+            method: 'POST',
+            body: JSON.stringify(data)
+          }
+        );
+        return response.assignment;
+      } catch (error) {
+        console.error('Assign trainer error:', error);
+        throw error;
+      }
+    },
+
+    getMySubdivisions: async (): Promise<any[]> => {
+      try {
+        const response = await this.fetchAPI<{ subdivisions: any[] }>(
+          '/trainers/my-subdivisions'
+        );
+        return response.subdivisions || [];
+      } catch (error) {
+        console.error('Get trainer subdivisions error:', error);
+        return [];
+      }
+    }
+  };
+
+  skills = {
+    getAll: async (category?: string): Promise<any[]> => {
+      try {
+        const params = category ? `?category=${category}` : '';
+        const response = await this.fetchAPI<{ skills: any[] }>(
+          `/skills${params}`
+        );
+        return response.skills || [];
+      } catch (error) {
+        console.error('Get skills error:', error);
+        return [];
+      }
+    },
+
+    getById: async (id: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ skill: any }>(
+          `/skills/${id}`
+        );
+        return response.skill;
+      } catch (error) {
+        console.error('Get skill error:', error);
+        throw error;
+      }
+    },
+
+    create: async (data: {
+      name: string;
+      category: string;
+      description?: string;
+    }): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ skill: any }>(
+          '/skills',
+          {
+            method: 'POST',
+            body: JSON.stringify(data)
+          }
+        );
+        return response.skill;
+      } catch (error) {
+        console.error('Create skill error:', error);
+        throw error;
+      }
+    }
+  };
+
+  performance = {
+    getProfile: async (studentId: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ profile: any }>(
+          `/performance/${studentId}`
+        );
+        return response.profile;
+      } catch (error) {
+        console.error('Get performance profile error:', error);
+        throw error;
+      }
+    },
+
+    getHistory: async (studentId: string, limit = 20, offset = 0): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ snapshots: any[]; total: number }>(
+          `/performance/${studentId}/history?limit=${limit}&offset=${offset}`
+        );
+        return response;
+      } catch (error) {
+        console.error('Get performance history error:', error);
+        return { snapshots: [], total: 0 };
+      }
+    },
+
+    getSkills: async (studentId: string): Promise<any[]> => {
+      try {
+        const response = await this.fetchAPI<{ skills: any[] }>(
+          `/performance/${studentId}/skills`
+        );
+        return response.skills || [];
+      } catch (error) {
+        console.error('Get performance skills error:', error);
+        return [];
+      }
+    }
+  };
+
+  learning = {
+    getKnowledge: async (visibilityType?: string): Promise<any[]> => {
+      try {
+        const params = visibilityType ? `?visibility_type=${visibilityType}` : '';
+        const response = await this.fetchAPI<{ documents: any[] }>(
+          `/learning/knowledge${params}`
+        );
+        return response.documents || [];
+      } catch (error) {
+        console.error('Get knowledge documents error:', error);
+        return [];
+      }
+    },
+
+    getKnowledgeById: async (id: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ document: any; chunks: any[] }>(
+          `/learning/knowledge/${id}`
+        );
+        return response;
+      } catch (error) {
+        console.error('Get knowledge document error:', error);
+        throw error;
+      }
+    },
+
+    getPlans: async (studentId: string): Promise<any[]> => {
+      try {
+        const response = await this.fetchAPI<{ plans: any[] }>(
+          `/learning/plans/${studentId}`
+        );
+        return response.plans || [];
+      } catch (error) {
+        console.error('Get learning plans error:', error);
+        return [];
+      }
+    },
+
+    getRecommendations: async (studentId: string): Promise<any[]> => {
+      try {
+        const response = await this.fetchAPI<{ recommendations: any[] }>(
+          `/learning/recommendations/${studentId}`
+        );
+        return response.recommendations || [];
+      } catch (error) {
+        console.error('Get learning recommendations error:', error);
+        return [];
+      }
+    },
+
+    runAgent: async (studentId: string, goal: string): Promise<string> => {
+      try {
+        const response = await this.fetchAPI<{ agentRunId: string }>(
+          '/learning/agent/run',
+          {
+            method: 'POST',
+            body: JSON.stringify({ studentId, goal })
+          }
+        );
+        return response.agentRunId;
+      } catch (error) {
+        console.error('Run learning agent error:', error);
+        throw error;
+      }
+    },
+
+    getAgentRun: async (runId: string): Promise<any> => {
+      try {
+        const response = await this.fetchAPI<{ run: any; steps: any[]; learningPlan: any }>(
+          `/learning/agent/run/${runId}`
+        );
+        return response;
+      } catch (error) {
+        console.error('Get agent run error:', error);
+        throw error;
+      }
+    }
+  };
 }
+
 
 export const api = new ApiClient();

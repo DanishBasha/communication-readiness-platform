@@ -64,7 +64,9 @@ export const ProgramDetailPage: React.FC = () => {
     const fetchStudents = async () => {
       setLoading(true);
       try {
-        const all = await api.admin.getStudents();
+        const all = await api.admin.getUsers({ role: 'STUDENT' }).then(users =>
+          users.length > 0 ? users : api.admin.getStudents()
+        ).catch(() => api.admin.getStudents());
         // Filter students belonging to this program or track
         const programStudents = (all || []).filter((s: StudentProfile) => 
           s.programName === program.name || 
