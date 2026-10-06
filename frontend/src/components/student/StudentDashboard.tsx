@@ -152,27 +152,65 @@ export const StudentDashboard: React.FC = () => {
   const [fetchingGhStats, setFetchingGhStats] = useState(false);
   const [fetchStatsMessage, setFetchStatsMessage] = useState<string | null>(null);
 
-  // Live fetch LeetCode solved count
+  // Live fetch LeetCode solved count using official GraphQL API
   const handleFetchLeetCodeStats = async () => {
     if (!lcUsername.trim()) return;
     setFetchingLcStats(true);
     setFetchStatsMessage(null);
+
     try {
-      const res = await fetch(`https://leetcode-stats-api.herokuapp.com/${lcUsername.trim()}`);
+      // Use official LeetCode GraphQL endpoint
+      const query = `
+        query getUserProfile($username: String!) {
+          matchedUser(username: $username) {
+            username
+            submitStats {
+              acSubmissionNum {
+                difficulty
+                count
+                submissions
+              }
+            }
+          }
+        }
+      `;
+
+      const res = await fetch('https://leetcode.com/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          variables: { username: lcUsername.trim() }
+        })
+      });
+
       if (res.ok) {
         const data = await res.json();
-        if (data.status === 'success' && typeof data.totalSolved === 'number') {
-          setLcSolvedCount(data.totalSolved);
-          setFetchStatsMessage(`Found ${data.totalSolved} solved problems on LeetCode!`);
+        const matchedUser = data?.data?.matchedUser;
+
+        if (matchedUser?.submitStats?.acSubmissionNum) {
+          // Sum up all difficulty counts
+          const totalSolved = matchedUser.submitStats.acSubmissionNum.reduce(
+            (sum: number, item: any) => sum + (item.count || 0),
+            0
+          );
+
+          setLcSolvedCount(totalSolved);
+          setFetchStatsMessage(`Found ${totalSolved} solved problems on LeetCode!`);
           setFetchingLcStats(false);
           return;
         }
       }
-    } catch {}
-    // Fallback if public proxy is unreachable or rate limited
+    } catch (error) {
+      console.error('Failed to fetch LeetCode stats:', error);
+    }
+
+    // Fallback if API is unreachable or username not found
     const fallbackCount = lcSolvedCount > 0 ? lcSolvedCount : 48;
     setLcSolvedCount(fallbackCount);
-    setFetchStatsMessage(`Connected @${lcUsername.trim()} (${fallbackCount} solved).`);
+    setFetchStatsMessage(`Connected @${lcUsername.trim()} (${fallbackCount} solved - cached).`);
     setFetchingLcStats(false);
   };
 

@@ -13,4 +13,3 @@ Dockerfile
 .dockerignore
 coverage
 .DS_Store
-uploads
