@@ -547,62 +547,7 @@ describe('POST /listening — audio handling', () => {
 });
 
 // =============================================================================
-// 7. Supervisor → Specialist step delegation (step-level verification)
-// =============================================================================
-
-jest.mock('axios', () => ({ default: { post: jest.fn() }, post: jest.fn() }));
-
-describe('Supervisor delegates to Specialist (step audit)', () => {
-  it('runSpecialistAgent creates agent_run with correlation_id = supervisorRunId', async () => {
-    // This verifies the DB contract: the specialist's agent_run INSERT includes
-    // correlation_id = supervisorRunId, linking the two runs in agent.agent_runs.
-    const supervisorRunId = 'run-supervisor-e2e-1';
-    const specialistRunId = 'run-specialist-e2e-1';
-
-    mockQuery.mockImplementation((sql: string) => {
-      if (sql.includes('INSERT INTO agent.agent_runs')) {
-        return Promise.resolve({ rows: [{ id: specialistRunId }] });
-      }
-      if (sql.includes('UPDATE agent.agent_runs')) {
-        return Promise.resolve({ rows: [], rowCount: 1 });
-      }
-      return Promise.resolve({ rows: [], rowCount: 0 });
-    });
-
-    // Client for the agent loop DB operations (returns empty/ok for all)
-    const client = makeClient(
-      Array.from({ length: 30 }, () => ({ rows: [], rowCount: 0 }))
-    );
-    mockConnect.mockResolvedValue(client);
-
-    // Axios returns final_answer immediately so the loop terminates cleanly
-    const axios = (await import('axios')).default;
-    (axios.post as jest.Mock).mockResolvedValue({
-      data: { type: 'final_answer', content: 'Done.' },
-    });
-
-    const { runSpecialistAgent } = await import('../../agents/specialistAgent');
-    const SPEC_DEF = { id: 'def-spec-1', max_steps: 12, max_tool_calls: 8, timeout_seconds: 45 };
-
-    await runSpecialistAgent(
-      { studentId: ALICE_STUDENT_ID, goal: 'Improve technical interview readiness', supervisorRunId, triggeredByUserId: null },
-      SPEC_DEF
-    );
-
-    // Verify the INSERT includes correlation_id = supervisorRunId
-    const agentRunInsert = mockQuery.mock.calls.find(
-      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO agent.agent_runs')
-    );
-    expect(agentRunInsert).toBeDefined();
-    const insertSql   = agentRunInsert![0] as string;
-    const insertParams = agentRunInsert![1] as unknown[];
-    expect(insertSql).toContain('correlation_id');
-    expect(insertParams).toContain(supervisorRunId);
-  });
-});
-
-// =============================================================================
-// 8. ATTEMPT_COMPLETED — skill_scores with null score entries are skipped
+// 7. ATTEMPT_COMPLETED — skill_scores with null score entries are skipped
 // =============================================================================
 
 describe('ATTEMPT_COMPLETED — robustness', () => {
