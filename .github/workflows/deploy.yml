@@ -181,3 +181,5 @@ jobs:
               "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
             echo "Deployment successful."
+            
+            docker image prune -af
