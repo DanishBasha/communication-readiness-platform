@@ -48,11 +48,10 @@ jobs:
         working-directory: ai-service
         run: pytest -q
 
-
   build-and-push:
     name: Build and Push Docker Images
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
@@ -64,9 +63,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v4
-
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -75,7 +71,7 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-backend:${{ github.sha }}
@@ -86,22 +82,11 @@ jobs:
         with:
           context: ./ai-service
           file: ./ai-service/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-ai:${{ github.sha }}
             ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-ai:latest
-
-      - name: Build and push frontend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-frontend:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-frontend:latest
 
   deploy:
     name: Deploy to EC2
@@ -182,9 +167,9 @@ jobs:
               --env-file .env.production \
               ps
 
-            echo "Checking backend..."
+            echo "Checking application through Nginx..."
 
-            curl --fail http://localhost:5000/api/health
+            curl --fail http://localhost/api/health
 
             echo "Checking AI service..."
 
@@ -196,5 +181,3 @@ jobs:
               "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
             echo "Deployment successful."
-
-            docker image prune -af
