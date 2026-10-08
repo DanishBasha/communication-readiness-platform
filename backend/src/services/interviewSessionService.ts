@@ -74,7 +74,7 @@ export async function createAttemptAndSession(
     if (abandoned.length > 0) {
       const abandonedIds = abandoned.map((row) => row.id);
       await client.query(
-        `UPDATE session.assessment_sessions SET state = 'ABANDONED', last_activity_at = now()
+        `UPDATE session.assessment_sessions SET state = 'TERMINATED', last_activity_at = now()
          WHERE attempt_id = ANY($1::uuid[])`,
         [abandonedIds]
       );
@@ -98,7 +98,7 @@ export async function createAttemptAndSession(
     const { rows: sessionRows } = await client.query<{ id: string }>(
       `INSERT INTO session.assessment_sessions
          (attempt_id, current_sequence_no, state, last_activity_at)
-       VALUES ($1, 0, 'STARTED', now())
+       VALUES ($1, 0, 'ACTIVE', now())
        RETURNING id`,
       [attemptId]
     );
@@ -153,9 +153,10 @@ export async function startLiveInterview(userId: string, resumeInput?: ResumeInp
   firstQuestion: { id: string; questionNumber: number; questionText: string; difficulty: 'EASY'; category: string };
 }> {
   const { rows } = await db.query<StudentContext & { name: string }>(
-    `SELECT s.id, s.program_id, s.batch_id, s.subdivision_id, u.name
+    `SELECT s.id, b.program_id, s.batch_id, s.subdivision_id, u.name
      FROM org.students s
      JOIN identity.users u ON u.id = s.user_id
+     JOIN org.batches b ON b.id = s.batch_id
      WHERE s.user_id = $1`,
     [userId]
   );
@@ -326,7 +327,7 @@ export async function completeAttempt(
       ]
     );
     await client.query(
-      `UPDATE session.assessment_sessions SET state='CONCLUDED', last_activity_at=now() WHERE id=$1`,
+      `UPDATE session.assessment_sessions SET state='COMPLETED', last_activity_at=now() WHERE id=$1`,
       [sessionId]
     );
     await client.query(

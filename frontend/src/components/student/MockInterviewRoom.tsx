@@ -634,8 +634,8 @@ export const MockInterviewRoom: React.FC = () => {
               lastVoiceActiveTimeRef.current = now;
               voiceDurationMsRef.current += 16;
 
-              // Clear silence timer if user speaks again
-              if (avg > 20 && silenceTimerRef.current) {
+              // Clear silence timer if user speaks again (same threshold as voice detection)
+              if (avg > 16 && silenceTimerRef.current) {
                 clearTimeout(silenceTimerRef.current);
                 silenceTimerRef.current = null;
               }

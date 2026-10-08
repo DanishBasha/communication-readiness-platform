@@ -269,7 +269,7 @@ adminRouter.get(
       const { rows } = await db.query(
         `${STUDENT_SUMMARY_SELECT}
          WHERE ($1::uuid IS NULL OR u.institution_id = $1)
-           AND ($2::text IS NULL OR s.program_id::text = $2)
+           AND ($2::text IS NULL OR b.program_id::text = $2)
            AND ($3::text IS NULL OR s.batch_id::text = $3)
            AND ($4::text IS NULL OR u.name ILIKE '%' || $4 || '%' OR u.email ILIKE '%' || $4 || '%'
                 OR s.roll_number ILIKE '%' || $4 || '%')

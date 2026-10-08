@@ -109,6 +109,25 @@ export interface ParsedResume {
     techStack: string[];
     description: string;
   }[];
+  experience?: {
+    title: string;
+    company: string;
+    duration: string;
+    description: string;
+  }[];
+  education?: {
+    degree: string;
+    institution: string;
+    year: string;
+  }[];
+  certifications?: string[];
+  phone?: string;
+  email?: string;
+  links?: {
+    github?: string | null;
+    linkedin?: string | null;
+    portfolio?: string | null;
+  };
 }
 
 export interface CriteriaTask {

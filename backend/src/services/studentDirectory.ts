@@ -6,7 +6,7 @@
 
 export const STUDENT_SUMMARY_SELECT = `
   SELECT s.id, s.user_id, s.roll_number, s.coding_handles,
-         s.program_id, s.batch_id, s.subdivision_id,
+         b.program_id, s.batch_id, s.subdivision_id,
          u.name, u.email, u.status,
          p.name   AS program_name,
          b.name   AS batch_name,
@@ -15,6 +15,7 @@ export const STUDENT_SUMMARY_SELECT = `
          d.name   AS department_name,
          r.file_name  AS resume_file_name,
          r.object_key AS resume_url,
+         r.parsed_data AS resume_parsed_data,
          EXISTS (
            SELECT 1 FROM placement.mentor_verifications mv
            WHERE mv.student_id = s.id AND mv.verification_type = 'PROFILE' AND mv.status = 'VERIFIED'
@@ -31,8 +32,8 @@ export const STUDENT_SUMMARY_SELECT = `
          mentor.email AS mentor_email
   FROM org.students s
   JOIN identity.users u ON u.id = s.user_id
-  LEFT JOIN org.programs p      ON p.id = s.program_id
   LEFT JOIN org.batches b       ON b.id = s.batch_id
+  LEFT JOIN org.programs p      ON p.id = b.program_id
   LEFT JOIN org.subdivisions sub ON sub.id = s.subdivision_id
   LEFT JOIN org.departments d   ON d.id = u.department_id
   LEFT JOIN org.resumes r       ON r.student_id = s.id AND r.is_current = true

@@ -58,8 +58,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 async function getStudentContext(studentId: string): Promise<StudentContext> {
   const { rows } = await db.query<StudentContext>(
-    `SELECT s.id, s.program_id, s.batch_id, s.subdivision_id
-     FROM org.students s WHERE s.id = $1`,
+    `SELECT s.id, b.program_id, s.batch_id, s.subdivision_id
+     FROM org.students s
+     JOIN org.batches b ON b.id = s.batch_id
+     WHERE s.id = $1`,
     [studentId]
   );
   if (rows.length === 0) throw new AppError(404, 'Student not found', 'NOT_FOUND');
