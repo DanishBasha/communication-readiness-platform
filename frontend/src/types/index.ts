@@ -135,6 +135,8 @@ export interface QuestionTurn {
   feedback?: string;
   strengths?: string;
   weaknesses?: string;
+  // Rubric points this answer missed (live interview)
+  keyPointsMissed?: string[];
 }
 
 export interface DiagnosticReport {
@@ -158,6 +160,30 @@ export interface DiagnosticReport {
   isFlagged: boolean;
   isDisqualified?: boolean;
   disqualificationReason?: string;
+  // Present on reports built by the live interview server
+  coins?: number; // wallet after this session's completion reward
+  fluencyScore?: number;
+  clarityScore?: number;
+  paceLabel?: string | null;
+  longPauses?: number;
+  averageResponseLatencySec?: number | null;
+  questionsAnswered?: number;
+  questionsPlanned?: number;
+  scoringMethod?: string[];
+  turns?: {
+    turn: number;
+    question: string;
+    difficulty: 'EASY' | 'MEDIUM' | 'ADVANCED';
+    technicalScore: number;
+    communicationScore: number;
+    overallScore: number;
+    wpm: number | null;
+    fillerCount: number;
+    pauseCount: number | null;
+    feedback: string;
+    pointsCovered: string[];
+    pointsMissed: string[];
+  }[];
 }
 
 export interface ImprovementChecklistItem {

@@ -1,11 +1,65 @@
+# Production stack for a single EC2 host.
+#
+#   browser ──HTTPS──▶ caddy :443 ──▶ frontend (nginx: SPA + /api proxy) ──▶ backend :5000 ──▶ ai-service :8000
+#
+# The deploy workflow writes .env.production from AWS Secrets Manager (secret "pcp");
+# every key it needs is listed in .env.production.example.
+
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # SITE_ADDRESS = the public host name (e.g. pcp.example.com or 13-233-10-20.sslip.io):
+    # Caddy fetches a Let's Encrypt certificate and redirects HTTP to HTTPS.
+    # Unset → plain HTTP on :80, where browsers block the microphone.
+    command: ["caddy", "reverse-proxy", "--from", "${SITE_ADDRESS:-:80}", "--to", "frontend:80"]
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - app
+
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/communication-readiness-frontend:${IMAGE_TAG}
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - app
+
   backend:
     image: ${DOCKERHUB_USERNAME}/communication-readiness-backend:${IMAGE_TAG}
     restart: unless-stopped
     env_file:
       - .env.production
+    environment:
+      NODE_ENV: production
+      AI_SERVICE_URL: http://ai-service:8000
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    # Host-only: used by the deploy health check. Public traffic arrives through caddy.
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - backend_uploads:/app/uploads
+    extra_hosts:
+      # lets DATABASE_URL point at a PostgreSQL installed on the EC2 host itself
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -31,8 +85,14 @@ services:
     restart: unless-stopped
     env_file:
       - .env.production
+    environment:
+      INTERNAL_API_KEY: ${AI_INTERNAL_KEY}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    # Internal only — reached by the backend over the compose network
     expose:
       - "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -57,6 +117,11 @@ services:
     command: ["python", "worker.py"]
     env_file:
       - .env.production
+    environment:
+      INTERNAL_API_KEY: ${AI_INTERNAL_KEY}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -81,22 +146,39 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test:
-        [
-          "CMD",
-          "redis-cli",
-          "-a",
-          "${REDIS_PASSWORD}",
-          "ping"
-        ]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
       - app
 
+  # Optional PostgreSQL + pgvector on the same host. Enable with COMPOSE_PROFILES=local-db
+  # and DATABASE_URL=postgresql://postgres:<POSTGRES_PASSWORD>@db:5432/comm_readiness
+  db:
+    profiles: ["local-db"]
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: comm_readiness
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "comm_readiness"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - app
+
 volumes:
   redis_data:
+  backend_uploads:
+  caddy_data:
+  caddy_config:
+  pg_data:
 
 networks:
   app:

@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { ResumeUploadModal } from './ResumeUploadModal';
 import { useBackHandler } from '../../hooks/useBackHandler';
+import { api } from '../../services/api';
 import { isAssignmentElapsed } from '../common/AssessmentMonitoringWidget';
 
 export const StudentDashboard: React.FC = () => {
@@ -152,66 +153,21 @@ export const StudentDashboard: React.FC = () => {
   const [fetchingGhStats, setFetchingGhStats] = useState(false);
   const [fetchStatsMessage, setFetchStatsMessage] = useState<string | null>(null);
 
-  // Live fetch LeetCode solved count using official GraphQL API
+  // LeetCode solved count, looked up by the backend (leetcode.com blocks browser requests)
   const handleFetchLeetCodeStats = async () => {
     if (!lcUsername.trim()) return;
     setFetchingLcStats(true);
     setFetchStatsMessage(null);
-
     try {
-      // Use official LeetCode GraphQL endpoint
-      const query = `
-        query getUserProfile($username: String!) {
-          matchedUser(username: $username) {
-            username
-            submitStats {
-              acSubmissionNum {
-                difficulty
-                count
-                submissions
-              }
-            }
-          }
-        }
-      `;
-
-      const res = await fetch('https://leetcode.com/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query,
-          variables: { username: lcUsername.trim() }
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const matchedUser = data?.data?.matchedUser;
-
-        if (matchedUser?.submitStats?.acSubmissionNum) {
-          // Sum up all difficulty counts
-          const totalSolved = matchedUser.submitStats.acSubmissionNum.reduce(
-            (sum: number, item: any) => sum + (item.count || 0),
-            0
-          );
-
-          setLcSolvedCount(totalSolved);
-          setFetchStatsMessage(`Found ${totalSolved} solved problems on LeetCode!`);
-          setFetchingLcStats(false);
-          return;
-        }
-      }
+      const { solved } = await api.student.leetcodeStats(lcUsername.trim());
+      setLcSolvedCount(solved);
+      setFetchStatsMessage(`Found ${solved} solved problems on LeetCode!`);
     } catch (error) {
-      console.error('Failed to fetch LeetCode stats:', error);
+      // Never invent a number: keep what the student already has
+      setFetchStatsMessage(`Couldn't verify @${lcUsername.trim()} on LeetCode (${error instanceof Error ? error.message : 'unavailable'}). You can enter the solved count manually.`);
+    } finally {
+      setFetchingLcStats(false);
     }
-
-    // Fallback if API is unreachable or username not found
-    const fallbackCount = lcSolvedCount > 0 ? lcSolvedCount : 48;
-    setLcSolvedCount(fallbackCount);
-    setFetchStatsMessage(`Connected @${lcUsername.trim()} (${fallbackCount} solved - cached).`);
-    setFetchingLcStats(false);
   };
 
   // Live fetch GitHub public repository count
@@ -231,10 +187,8 @@ export const StudentDashboard: React.FC = () => {
         }
       }
     } catch {}
-    // Fallback if GitHub rate-limits unauthenticated API requests
-    const fallbackCount = ghReposCount > 0 ? ghReposCount : 8;
-    setGhReposCount(fallbackCount);
-    setFetchStatsMessage(`Connected @${ghUsername.trim()} (${fallbackCount} repos).`);
+    // GitHub not reachable / rate-limited / no such user: keep the existing count, don't invent one
+    setFetchStatsMessage(`Couldn't verify @${ghUsername.trim()} on GitHub right now. You can enter the repository count manually.`);
     setFetchingGhStats(false);
   };
 
