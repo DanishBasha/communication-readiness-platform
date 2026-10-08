@@ -33,8 +33,10 @@ async function knowledgeVisibility(
   const { rows } = await db.query<{
     institution_id: string | null; program_id: string | null; subdivision_id: string | null;
   }>(
-    `SELECT u.institution_id, s.program_id, s.subdivision_id
-     FROM identity.users u LEFT JOIN org.students s ON s.user_id = u.id
+    `SELECT u.institution_id, b.program_id, s.subdivision_id
+     FROM identity.users u
+     LEFT JOIN org.students s ON s.user_id = u.id
+     LEFT JOIN org.batches b  ON b.id = s.batch_id
      WHERE u.id = $1`,
     [user.id]
   );

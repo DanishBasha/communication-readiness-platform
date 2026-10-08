@@ -50,8 +50,8 @@ export async function openSession(
       model: 'nova-3',
       language: 'en',
       interim_results: ListenV1InterimResults.True,
-      utterance_end_ms: 1000,
-      endpointing: 300,
+      utterance_end_ms: 2500,
+      endpointing: 500,
       smart_format: ListenV1SmartFormat.True,
       vad_events: ListenV1VadEvents.True,
       filler_words: 'true', // keep "um"/"uh" in transcripts — they are scored (blueprint §4.4)
@@ -92,6 +92,10 @@ export async function openSession(
     } else if (msg?.type === 'UtteranceEnd') {
       if (session.triggered) return;
       session.triggered = true;
+
+      // Brief pause: final Results messages from Deepgram can arrive a few hundred
+      // milliseconds after UtteranceEnd, so wait before reading session.transcript.
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       // May be empty — the caller decides how to handle a silent turn
       const finalTranscript = session.transcript.trim();

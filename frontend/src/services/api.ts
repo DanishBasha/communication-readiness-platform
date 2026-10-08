@@ -309,6 +309,49 @@ function synthesizeDynamicReport(
 // Backend origin for a separately hosted frontend, e.g. https://api.example.com (no /api)
 export const API_ORIGIN = String(import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '').replace(/\/api$/, '');
 
+function parseParsedData(pd: any, fileName?: string): ParsedResume {
+  // Support both old flat schema (skills: string[]) and new structured schema (skills: { languages, ... })
+  const skillsRaw = pd.skills;
+  const skillsIsObject = skillsRaw && !Array.isArray(skillsRaw) && typeof skillsRaw === 'object';
+  return {
+    fileName: fileName || pd.name || 'Resume',
+    parsedAt: new Date().toISOString().split('T')[0],
+    summary: pd.summary || '',
+    skills: {
+      languages: skillsIsObject ? (skillsRaw.languages || []) : (pd.languages || []),
+      frameworks: skillsIsObject ? (skillsRaw.frameworks || []) : (Array.isArray(skillsRaw) ? skillsRaw : []),
+      databases: skillsIsObject ? (skillsRaw.databases || []) : [],
+      tools: skillsIsObject ? (skillsRaw.tools || []) : [],
+    },
+    projects: (pd.projects || []).map((p: any) => ({
+      title: p.title || '',
+      description: p.description || '',
+      techStack: p.techStack || p.tech_stack || [],
+    })),
+    experience: (pd.experience || []).map((e: any) => ({
+      title: e.title || '',
+      company: e.company || '',
+      duration: e.duration || '',
+      description: e.description || '',
+    })),
+    education: (pd.education || []).map((e: any) => ({
+      degree: e.degree || '',
+      institution: e.institution || '',
+      year: e.year || '',
+    })),
+    certifications: pd.certifications || [],
+    phone: pd.phone || undefined,
+    email: pd.email || undefined,
+    links: pd.links
+      ? {
+          github: pd.links.github || null,
+          linkedin: pd.links.linkedin || null,
+          portfolio: pd.links.portfolio || null,
+        }
+      : undefined,
+  };
+}
+
 class ApiClient {
   private token: string | null = null;
   // Same-origin '/api' (Vite proxy in dev, nginx in Docker) unless the frontend is hosted
@@ -2021,7 +2064,9 @@ class ApiClient {
           mentorName: s.mentor_name || 'Not Assigned',
           mentorEmail: s.mentor_email || '',
           codingHandles: s.coding_handles || { leetcodeSolved: 0, githubRepos: 0 },
-          resume: s.resume || null,
+          resume: s.resume_parsed_data
+            ? parseParsedData(s.resume_parsed_data, s.resume_file_name)
+            : null,
           criteriaTasks: INITIAL_CRITERIA_TASKS, // Backend doesn't have this yet
           improvementChecklist: [], // Backend doesn't have this yet
           recentReports: s.recent_reports || [],
@@ -2122,13 +2167,19 @@ class ApiClient {
           }
 
           const data = await response.json();
+          const pd = data?.data?.parsedData;
 
-          // Refresh profile to get updated resume
+          // Use parsed_data returned directly in the upload response (parsed synchronously by AI service).
+          if (pd) {
+            return parseParsedData(pd, data?.data?.fileName);
+          }
+
+          // Fallback: refresh profile (e.g. if AI service was slow/unavailable)
           const updated = await this.student.getProfile(studentId);
           return updated.resume || {
-            fileName: 'Uploaded Resume',
+            fileName: data?.data?.fileName || 'Uploaded Resume',
             parsedAt: new Date().toISOString().split('T')[0],
-            summary: 'Resume uploaded successfully',
+            summary: 'Resume uploaded successfully. Parsing in progress.',
             skills: { languages: [], frameworks: [], databases: [], tools: [] },
             projects: []
           };

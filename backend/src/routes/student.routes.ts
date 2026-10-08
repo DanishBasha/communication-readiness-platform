@@ -72,7 +72,6 @@ studentRouter.get(
 
 studentRouter.get(
   '/me',
-  authenticate,
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user!.id;
@@ -191,6 +190,7 @@ studentRouter.patch(
         throw new AppError(422, 'Only PDF files are accepted', 'INVALID_FILE_TYPE');
       }
 
+      // Upload file first; if the DB transaction fails we clean up the orphaned file.
       const filename = `resumes/${randomUUID()}.pdf`;
       const resumeUrl = await storage.upload(req.file.buffer, filename, 'application/pdf');
 
@@ -198,18 +198,20 @@ studentRouter.patch(
       // earlier mentor sign-off no longer applies to it.
       const client = await db.connect();
       let version: number;
+      let resumeId: string;
       try {
         await client.query('BEGIN');
         await client.query(
           'UPDATE org.resumes SET is_current = false, updated_at = now() WHERE student_id = $1 AND is_current = true',
           [studentId]
         );
-        const { rows } = await client.query<{ version: number }>(
+        const { rows } = await client.query<{ id: string; version: number }>(
           `INSERT INTO org.resumes (student_id, version, object_key, file_name, is_current)
            VALUES ($1, COALESCE((SELECT MAX(version) FROM org.resumes WHERE student_id = $1), 0) + 1, $2, $3, true)
-           RETURNING version`,
+           RETURNING id, version`,
           [studentId, resumeUrl, req.file.originalname]
         );
+        resumeId = rows[0].id;
         version = rows[0].version;
         await client.query(
           `UPDATE placement.mentor_verifications SET status = 'PENDING', verified_at = NULL, updated_at = now()
@@ -219,12 +221,38 @@ studentRouter.patch(
         await client.query('COMMIT');
       } catch (txErr) {
         await client.query('ROLLBACK');
+        // Clean up the uploaded file so we don't leave orphaned files on disk.
+        try { await storage.delete(filename); } catch (_) { /* best-effort */ }
         throw txErr;
       } finally {
         client.release();
       }
 
-      sendSuccess(res, { resumeUrl, fileName: req.file.originalname, version });
+      // Parse resume synchronously so the response includes parsed_data.
+      // 60s timeout — if AI service is slow or down, we still return success without parsed data.
+      let parsedData: Record<string, unknown> | null = null;
+      try {
+        const parseRes = await axios.post(
+          `${env.AI_SERVICE_URL}/internal/parse-resume`,
+          {
+            pdf_base64: req.file.buffer.toString('base64'),
+            student_id: studentId,
+            resume_id: resumeId,
+          },
+          { headers: { 'X-Internal-Key': env.AI_INTERNAL_KEY }, timeout: 60_000 }
+        );
+        // Fetch the parsed_data the AI service just wrote to the DB
+        const { rows: resumeRows } = await db.query<{ parsed_data: Record<string, unknown> | null }>(
+          'SELECT parsed_data FROM org.resumes WHERE id = $1',
+          [resumeId]
+        );
+        parsedData = resumeRows[0]?.parsed_data ?? null;
+      } catch (parseErr: unknown) {
+        const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+        console.error('[resume-parse] parse failed (non-fatal):', msg);
+      }
+
+      sendSuccess(res, { resumeUrl, fileName: req.file.originalname, version, parsedData });
     } catch (err) {
       sendError(res, err);
     }

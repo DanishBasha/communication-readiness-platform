@@ -35,7 +35,7 @@ const MAX_TRANSCRIPT_CHARS = 5000;
 const MAX_BUFFERED_AUDIO_BYTES = 5 * 1024 * 1024;
 const MAX_PENDING_MESSAGES = 200;
 // After audio_end, give Deepgram a moment to deliver its last final result
-const DEEPGRAM_FLUSH_MS = 750;
+const DEEPGRAM_FLUSH_MS = 1200;
 const KEEPALIVE_MS = 25_000;
 
 interface Turn {

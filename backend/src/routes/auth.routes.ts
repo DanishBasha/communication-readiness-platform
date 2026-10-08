@@ -137,9 +137,9 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
 
     const { rows } = await db.query<{
       id: string; name: string; email: string; role: UserRole;
-      password_hash: string; token_version: number; status: string; is_active: boolean;
+      password_hash: string; token_version: number; status: string;
     }>(
-      `SELECT id, name, email, role, password_hash, token_version, status, is_active
+      `SELECT id, name, email, role, password_hash, token_version, status
        FROM identity.users WHERE email = $1`,
       [email]
     );
@@ -155,7 +155,7 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
     clearFailures(ip, email);
 
     const user = rows[0];
-    const blocked = accountBlock(user.status, user.is_active);
+    const blocked = accountBlock(user.status, null);
     if (blocked) throw blocked;
 
     let studentId: string | null = null;

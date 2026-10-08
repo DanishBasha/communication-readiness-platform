@@ -1,6 +1,6 @@
--- Reconcile columns referenced throughout the application but never added to
--- identity.users. These were likely dropped during schema refactoring (migration 034)
--- without a compensating ADD COLUMN.
+-- Add institution_id and department_id to identity.users.
+-- These columns are referenced throughout the application (auth, admin, learning routes)
+-- but were dropped during schema refactoring without a compensating ADD COLUMN.
 
 ALTER TABLE identity.users
   ADD COLUMN IF NOT EXISTS institution_id UUID REFERENCES org.institutions(id) ON DELETE SET NULL,

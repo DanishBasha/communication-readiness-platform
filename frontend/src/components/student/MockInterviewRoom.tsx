@@ -72,6 +72,7 @@ export const MockInterviewRoom: React.FC = () => {
 
   const [hasSessionStarted, setHasSessionStarted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState<{ current: number; max: number } | null>(null);
   const [isSpeakingQuestion, setIsSpeakingQuestion] = useState(false);
   const [audioVolume, setAudioVolume] = useState(0.2);
   const [currentSpeechText, setCurrentSpeechText] = useState("");
@@ -209,29 +210,54 @@ export const MockInterviewRoom: React.FC = () => {
     };
   };
 
-  // Socket dropped mid-interview (network blip, laptop sleep): reconnect with backoff.
-  // The server keeps the interview state, so nothing is lost.
+  // Socket dropped mid-interview (network blip, laptop sleep, proxy timeout):
+  // retry with exponential backoff, pausing when the device goes offline.
+  // The server keeps the full interview state so nothing is lost on reconnect.
+  const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000]; // ~30 s total
+
+  const waitForOnline = (): Promise<void> =>
+    new Promise(resolve => {
+      if (navigator.onLine) { resolve(); return; }
+      const handler = () => { window.removeEventListener('online', handler); resolve(); };
+      window.addEventListener('online', handler);
+    });
+
   const reconnectLive = async () => {
     const socket = liveSocketRef.current;
     if (!socket || reconnectingRef.current || interviewState.isCompletedAwaitingEvaluation) return;
     reconnectingRef.current = true;
-    setMicPermissionError('Connection lost — reconnecting to the interviewer…');
     stopRecordingTurn();
-    for (const delayMs of [1000, 2000, 4000]) {
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+    isSubmittingRef.current = false;
+    setIsSubmitting(false);
+    setMicPermissionError(null);
+
+    for (let i = 0; i < RECONNECT_DELAYS.length; i++) {
+      setReconnectAttempt({ current: i + 1, max: RECONNECT_DELAYS.length });
+      // Hold until the browser reports network is back
+      await waitForOnline();
+      await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAYS[i]));
+      // Don't keep retrying if the interview ended while we were waiting
+      if (interviewState.isCompletedAwaitingEvaluation || timeUpRef.current) break;
       try {
         await socket.connect();
         reconnectingRef.current = false;
-        isSubmittingRef.current = false;
-        setIsSubmitting(false);
-        setMicPermissionError(null);
+        setReconnectAttempt(null);
         return;
       } catch {
-        // try again
+        // next delay
       }
     }
+
+    // All retries exhausted — surface the error and let the user try manually
     reconnectingRef.current = false;
-    setMicPermissionError('Could not reconnect to the interview service. Check your connection and use Replay to continue.');
+    setReconnectAttempt(null);
+    setMicPermissionError('Could not reconnect to the interview service. Tap "Reconnect" to try again.');
+  };
+
+  const handleManualReconnect = () => {
+    setMicPermissionError(null);
+    reconnectingRef.current = false;
+    reconnectLive();
   };
 
   const handleLiveMessage = (message: LiveInterviewMessage) => {
@@ -634,8 +660,8 @@ export const MockInterviewRoom: React.FC = () => {
               lastVoiceActiveTimeRef.current = now;
               voiceDurationMsRef.current += 16;
 
-              // Clear silence timer if user speaks again
-              if (avg > 20 && silenceTimerRef.current) {
+              // Clear silence timer if user speaks again (same threshold as voice detection)
+              if (avg > 16 && silenceTimerRef.current) {
                 clearTimeout(silenceTimerRef.current);
                 silenceTimerRef.current = null;
               }
@@ -650,12 +676,12 @@ export const MockInterviewRoom: React.FC = () => {
               ) {
                 const silenceDuration = now - lastVoiceActiveTimeRef.current;
 
-                // When silence reaches 1200ms after speaking, allow 3.5s quiet window before auto-submission
-                if (silenceDuration >= 1200 && !silenceTimerRef.current) {
+                // When silence reaches 1500ms after speaking, allow 5s quiet window before auto-submission
+                if (silenceDuration >= 1500 && !silenceTimerRef.current) {
                   silenceTimerRef.current = setTimeout(() => {
                     silenceTimerRef.current = null;
                     handleExecuteSubmit(latestSpeechRef.current || currentSpeechText);
-                  }, 3500);
+                  }, 5000);
                 }
               }
             }
@@ -993,12 +1019,19 @@ export const MockInterviewRoom: React.FC = () => {
   }, [currentQ?.id, currentQ?.questionText, hasSessionStarted, isMuted]);
 
   const handleStartSession = async () => {
+    // The session API call (startInterview) navigates here before its response arrives.
+    // If sessionId is still undefined the WebSocket URL would be empty, causing the
+    // "Unable to connect" error. Show a friendly message so the user just retries.
+    if (!interviewState.sessionId) {
+      setMicPermissionError('Session is still setting up — please wait a moment and try again.');
+      return;
+    }
     setIsStartingSession(true);
     try {
       requestFullscreen();
       setDrawerOpen(false);
       await initMicrophoneStream();
-      const socket = new LiveInterviewSocket(interviewState.sessionId || '', localStorage.getItem('auth_token'));
+      const socket = new LiveInterviewSocket(interviewState.sessionId, localStorage.getItem('auth_token'));
       await socket.connect();
       liveSocketRef.current = socket;
       clientSttRef.current = socket.sttMode === 'client';
@@ -1416,10 +1449,33 @@ export const MockInterviewRoom: React.FC = () => {
         </div>
       )}
 
-      {micPermissionError && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between text-amber-900 text-xs">
+      {/* Reconnecting banner */}
+      {reconnectAttempt && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 flex items-center justify-between text-amber-900 text-xs">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="w-4 h-4 animate-spin text-amber-600 shrink-0" />
+            <span className="font-medium">
+              Connection lost — reconnecting… (attempt {reconnectAttempt.current} of {reconnectAttempt.max})
+            </span>
+          </div>
+          <span className="text-amber-600 font-mono text-[10px]">Interview state is preserved</span>
+        </div>
+      )}
+
+      {micPermissionError && !reconnectAttempt && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 flex items-center justify-between text-red-900 text-xs">
           <span>{micPermissionError}</span>
-          <button onClick={() => setMicPermissionError(null)} className="text-amber-700 font-bold ml-2">Dismiss</button>
+          <div className="flex items-center space-x-2 ml-2 shrink-0">
+            {micPermissionError.includes('Reconnect') && (
+              <button
+                onClick={handleManualReconnect}
+                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold transition-colors cursor-pointer"
+              >
+                Reconnect
+              </button>
+            )}
+            <button onClick={() => setMicPermissionError(null)} className="text-red-400 hover:text-red-600 font-bold">Dismiss</button>
+          </div>
         </div>
       )}
 
@@ -1463,7 +1519,7 @@ export const MockInterviewRoom: React.FC = () => {
             </div>
             <div className="pt-2">
               <button
-                disabled={isStartingSession}
+                disabled={isStartingSession || !interviewState.sessionId}
                 onClick={handleStartSession}
                 className="inline-flex items-center space-x-2.5 bg-neutral-900 hover:bg-black text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all shadow-md active:scale-98 cursor-pointer disabled:opacity-75"
               >
@@ -1471,6 +1527,11 @@ export const MockInterviewRoom: React.FC = () => {
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-white" />
                     <span>Connecting Hardware...</span>
+                  </>
+                ) : !interviewState.sessionId ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Setting up session...</span>
                   </>
                 ) : (
                   <>
@@ -1494,6 +1555,23 @@ export const MockInterviewRoom: React.FC = () => {
                 <div className="inline-flex items-center space-x-2 text-xs font-mono text-neutral-700 bg-neutral-100 border border-neutral-200 px-3.5 py-1.5 rounded-full animate-pulse shadow-2xs mt-4">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin" />
                   <span>Refining speech with OpenAI Whisper...</span>
+                </div>
+              )}
+
+              {/* Live transcript — student can see what the interviewer is hearing */}
+              {isRecording && (
+                <div className="w-full max-w-xl mt-5 min-h-[52px] flex flex-col items-center">
+                  {currentSpeechText ? (
+                    <div className="w-full bg-neutral-950/90 border border-neutral-700 rounded-2xl px-4 py-3 text-center">
+                      <p className="text-xs text-neutral-400 font-mono mb-1 uppercase tracking-wider">Interviewer hearing:</p>
+                      <p className="text-sm text-white leading-relaxed">{currentSpeechText}</p>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center space-x-2 text-xs text-neutral-500 font-mono">
+                      <span className="w-2 h-2 rounded-full bg-neutral-400 animate-pulse"></span>
+                      <span>Listening — speak clearly into your microphone</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
