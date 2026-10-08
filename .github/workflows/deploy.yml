@@ -4,9 +4,15 @@ on:
   push:
     branches:
       - prod
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# Never run two deployments against the server at once
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -22,7 +28,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
       - name: Backend install
         working-directory: backend
@@ -30,6 +38,22 @@ jobs:
 
       - name: Backend build
         working-directory: backend
+        run: npm run build
+
+      - name: Backend tests (interview scoring, module 3)
+        working-directory: backend
+        run: npx jest src/__tests__/interviewScoring.test.ts src/__tests__/module3
+
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend type check
+        working-directory: frontend
+        run: npm run compile
+
+      - name: Frontend build
+        working-directory: frontend
         run: npm run build
 
       - name: Setup Python
@@ -51,7 +75,9 @@ jobs:
   build-and-push:
     name: Build and Push Docker Images
     needs: test
-    runs-on: ubuntu-24.04-arm
+    # Native ARM runner for a Graviton (t4g/m7g…) EC2 instance. For an x86 instance set the
+    # repository variables BUILD_RUNNER=ubuntu-latest and DOCKER_PLATFORM=linux/amd64.
+    runs-on: ${{ vars.BUILD_RUNNER || 'ubuntu-24.04-arm' }}
 
     steps:
       - name: Checkout
@@ -71,8 +97,10 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile
-          platforms: linux/arm64
+          platforms: ${{ vars.DOCKER_PLATFORM || 'linux/arm64' }}
           push: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-backend:${{ github.sha }}
             ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-backend:latest
@@ -82,11 +110,26 @@ jobs:
         with:
           context: ./ai-service
           file: ./ai-service/Dockerfile
-          platforms: linux/arm64
+          platforms: ${{ vars.DOCKER_PLATFORM || 'linux/arm64' }}
           push: true
+          cache-from: type=gha,scope=ai
+          cache-to: type=gha,mode=max,scope=ai
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-ai:${{ github.sha }}
             ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-ai:latest
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: ${{ vars.DOCKER_PLATFORM || 'linux/arm64' }}
+          push: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-frontend:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/communication-readiness-frontend:latest
 
   deploy:
     name: Deploy to EC2
@@ -94,6 +137,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Copy compose file to the server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          source: docker-compose.prod.yml
+          target: /opt/pcp
+
       - name: Deploy
         uses: appleboy/ssh-action@v1
         env:
@@ -104,10 +159,19 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           envs: IMAGE_TAG,DOCKERHUB_USERNAME
+          command_timeout: 30m
           script: |
-            set -e
+            set -eo pipefail
 
             cd /opt/pcp
+
+            # Caddy (in compose) needs ports 80 and 443 on the host
+            for svc in nginx apache2 httpd caddy; do
+              if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                echo "::error::The host service '$svc' is holding port 80/443. Run once on the server: sudo systemctl disable --now $svc"
+                exit 1
+              fi
+            done
 
             echo "Fetching secrets from AWS Secrets Manager..."
 
@@ -137,47 +201,97 @@ jobs:
             export IMAGE_TAG="${IMAGE_TAG}"
             export DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME}"
 
+            echo "Validating configuration..."
+
+            missing=""
+            for key in DATABASE_URL JWT_SECRET AI_INTERNAL_KEY REDIS_PASSWORD CORS_ORIGIN; do
+              [ -n "${!key:-}" ] || missing="$missing $key"
+            done
+            [ -n "${LLM_API_KEY:-}${GROQ_API_KEY:-}" ] || missing="$missing LLM_API_KEY"
+            if [ -n "$missing" ]; then
+              echo "::error::Missing from the 'pcp' secret:$missing (see .env.production.example)"
+              exit 1
+            fi
+            if [ "${#JWT_SECRET}" -lt 32 ]; then
+              echo "::error::JWT_SECRET must be at least 32 characters"
+              exit 1
+            fi
+            case "$REDIS_PASSWORD" in
+              *[!A-Za-z0-9_-]*)
+                echo "::error::REDIS_PASSWORD may only use letters, digits, '-' and '_' (it is embedded in a URL)"
+                exit 1 ;;
+            esac
+            case ",${COMPOSE_PROFILES:-}," in
+              *,local-db,*)
+                if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+                  echo "::error::COMPOSE_PROFILES=local-db needs POSTGRES_PASSWORD"
+                  exit 1
+                fi ;;
+            esac
+
+            dc() {
+              docker compose -f docker-compose.prod.yml --env-file .env.production "$@"
+            }
+
+            show_logs() {
+              dc ps || true
+              dc logs --tail=80 backend ai-service frontend caddy || true
+            }
+
             echo "Pulling Docker images..."
 
-            docker compose \
-              -f docker-compose.prod.yml \
-              --env-file .env.production \
-              pull
+            dc pull
+
+            case ",${COMPOSE_PROFILES:-}," in
+              *,local-db,*)
+                echo "Starting the local database..."
+                dc up -d --wait db ;;
+            esac
 
             echo "Running database migrations..."
 
-            docker compose \
-              -f docker-compose.prod.yml \
-              --env-file .env.production \
-              run --rm --no-deps backend npm run migrate
+            dc run --rm --no-deps backend npm run migrate
 
             echo "Starting production services..."
 
-            docker compose \
-              -f docker-compose.prod.yml \
-              --env-file .env.production \
-              up -d
+            if ! dc up -d --wait --remove-orphans; then
+              echo "::error::A service did not become healthy"
+              show_logs
+              exit 1
+            fi
 
-            echo "Waiting for services..."
+            dc ps
 
-            sleep 15
+            echo "Checking backend..."
+            curl --fail --silent --show-error http://127.0.0.1:5000/api/health
 
-            docker compose \
-              -f docker-compose.prod.yml \
-              --env-file .env.production \
-              ps
-
-            echo "Checking application..."
-
-            curl --fail http://localhost:5000/api/health
+            echo "Checking frontend -> backend proxy..."
+            dc exec -T frontend wget -q -O - http://127.0.0.1/api/health
 
             echo "Checking AI service..."
-
-            docker compose \
-              -f docker-compose.prod.yml \
-              --env-file .env.production \
-              exec -T ai-service \
+            dc exec -T ai-service \
               python -c \
               "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
+            site="${SITE_ADDRESS:-}"
+            site="${site#*://}"
+            if [ -n "$site" ] && [ "${site#:}" = "$site" ]; then
+              echo "Checking https://$site ..."
+              ok=""
+              for i in $(seq 1 12); do
+                if curl --fail --silent --output /dev/null "https://$site/api/health"; then ok=1; break; fi
+                sleep 5
+              done
+              if [ -n "$ok" ]; then
+                echo "HTTPS is up: https://$site"
+              else
+                echo "::warning::https://$site is not answering yet. Check that DNS points at this server, that ports 80 and 443 are open in the security group, and: docker compose -f docker-compose.prod.yml logs caddy"
+              fi
+            else
+              echo "::warning::SITE_ADDRESS is not set: the site is served over plain HTTP, where browsers block the microphone (mock interview)."
+            fi
+
             echo "Deployment successful."
+
+            # Old image versions pile up on every deploy; images of running containers are kept
+            docker image prune -af

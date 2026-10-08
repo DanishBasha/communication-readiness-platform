@@ -306,9 +306,14 @@ function synthesizeDynamicReport(
   };
 }
 
+// Backend origin for a separately hosted frontend, e.g. https://api.example.com (no /api)
+export const API_ORIGIN = String(import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '').replace(/\/api$/, '');
+
 class ApiClient {
   private token: string | null = null;
-  private readonly baseURL = '/api'; // Proxied by nginx in production
+  // Same-origin '/api' (Vite proxy in dev, nginx in Docker) unless the frontend is hosted
+  // separately (e.g. AWS Amplify): then VITE_API_BASE_URL is the backend origin.
+  private readonly baseURL = `${API_ORIGIN}/api`;
 
   constructor() {
     this.token = localStorage.getItem('auth_token');
@@ -320,6 +325,16 @@ class ApiClient {
       localStorage.setItem('auth_token', token);
     } else {
       localStorage.removeItem('auth_token');
+    }
+  }
+
+  // Session coins saved for a student in this browser; new students start with 5
+  private storedCoins(studentId: string): number {
+    try {
+      const saved = parseInt(localStorage.getItem(`crp_student_coins_${studentId}`) ?? '', 10);
+      return Number.isNaN(saved) ? 5 : Math.max(0, saved);
+    } catch {
+      return 5;
     }
   }
 
@@ -359,14 +374,14 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        // Unauthorized - clear token
-        this.setToken(null);
-        throw new Error('Authentication required');
-      }
       const errorData = await response.json().catch(() => ({
         message: response.statusText
       }));
+      if (response.status === 401) {
+        // Unauthorized - clear token; surface the server message (e.g. "Invalid email or password")
+        this.setToken(null);
+        throw new Error(errorData.message || 'Authentication required');
+      }
       throw new Error(errorData.message || `API Error: ${response.status}`);
     }
 
@@ -2011,7 +2026,9 @@ class ApiClient {
           improvementChecklist: [], // Backend doesn't have this yet
           recentReports: s.recent_reports || [],
           overallReadiness: s.overall_readiness || 0,
-          coins: s.coins || 0
+          // The server profile has no coin balance; coins are kept per student in this
+          // browser (default 5). Falling back to 0 here emptied every account on login.
+          coins: typeof s.coins === 'number' ? s.coins : this.storedCoins(s.id)
         };
 
         // Cache in localStorage as backup
@@ -2031,6 +2048,10 @@ class ApiClient {
         return INITIAL_STUDENT_PROFILE;
       }
     },
+
+    // LeetCode stats are fetched server-side (leetcode.com blocks browser/CORS requests)
+    leetcodeStats: async (username: string): Promise<{ username: string; solved: number }> =>
+      this.fetchAPI(`/students/coding-stats/leetcode/${encodeURIComponent(username)}`),
 
     updateProfile: async (studentId: string, updates: Partial<StudentProfile>): Promise<StudentProfile> => {
       try {
@@ -2198,23 +2219,48 @@ class ApiClient {
   };
 
   interview = {
-    start: async (studentId: string, type: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION' | 'PRACTICE' = 'MOCK_INTERVIEW'): Promise<{ sessionId: string; firstQuestion: QuestionTurn }> => {
-      const sessionId = `ses_${Date.now()}`;
-      const student = await this.student.getProfile(studentId);
-      const dynamicTurns = generateDynamicQuestions(student);
-      const firstQ = dynamicTurns[0];
-
-      const sessionData = {
-        sessionId,
-        type,
-        turnIndex: 0,
-        questions: [firstQ],
-        plannedTurns: dynamicTurns,
-        tabSwitches: 0
+    // The server identifies the student from the JWT; studentId is kept for call-site compatibility.
+    // The parsed resume grounds the interviewer's questions in the candidate's own projects.
+    start: async (
+      _studentId: string,
+      type: 'MOCK_INTERVIEW' | 'LISTENING_COMPREHENSION' | 'PRACTICE' = 'MOCK_INTERVIEW',
+      resume?: ParsedResume | null
+    ): Promise<{ sessionId: string; firstQuestion: QuestionTurn; maxTurns?: number; coinsRemaining?: number }> => {
+      const skills = resume ? [
+        ...(resume.skills?.languages || []),
+        ...(resume.skills?.frameworks || []),
+        ...(resume.skills?.databases || []),
+        ...(resume.skills?.tools || []),
+      ] : [];
+      const projects = (resume?.projects || []).map(p => ({
+        title: p.title,
+        techStack: p.techStack || [],
+        description: p.description || '',
+      }));
+      const response = await this.fetchAPI<any>('/interview/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionType: type,
+          ...(skills.length || projects.length ? { resume: { skills: skills.slice(0, 40), projects: projects.slice(0, 10) } } : {})
+        })
+      });
+      const session = response.session || response;
+      const question = response.firstQuestion || response.question || session.firstQuestion || session.currentQuestion;
+      if (!session.sessionId || !question) {
+        throw new Error('The interview service did not return an initial question.');
+      }
+      return {
+        sessionId: session.sessionId,
+        maxTurns: session.maxTurns,
+        coinsRemaining: session.coinsRemaining,
+        firstQuestion: {
+          id: question.id || question.questionId,
+          questionNumber: question.questionNumber || question.sequenceNo || 1,
+          questionText: question.questionText || question.question_text,
+          difficulty: question.difficulty || 'EASY',
+          category: question.category
+        }
       };
-      this.setStorage(`interview_${sessionId}`, sessionData);
-
-      return { sessionId, firstQuestion: firstQ };
     },
 
     recordProctorEvent: async (sessionId: string, _eventType: 'TAB_SWITCH' | 'FULLSCREEN_EXIT') => {
@@ -2968,6 +3014,18 @@ class ApiClient {
         return [];
       }
     }
+  };
+
+  // Session coins live on the server (credit ledger); see backend coinService.ts
+  coins = {
+    me: async (): Promise<{ coins: number; maxCoins: number }> =>
+      this.fetchAPI('/coins/me'),
+    spend: async (purpose: 'LISTENING_COMPREHENSION'): Promise<{ sessionRef: string; coins: number }> =>
+      this.fetchAPI('/coins/me/spend', { method: 'POST', body: JSON.stringify({ purpose }) }),
+    complete: async (sessionRef: string): Promise<{ coins: number }> =>
+      this.fetchAPI('/coins/me/complete', { method: 'POST', body: JSON.stringify({ sessionRef }) }),
+    restore: async (studentId: string, coins = 5): Promise<{ coins: number }> =>
+      this.fetchAPI(`/coins/${studentId}/restore`, { method: 'POST', body: JSON.stringify({ coins }) }),
   };
 
   skills = {
