@@ -883,6 +883,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     restoreStudentCoinsToFive(studentId);
   };
 
+  // Sync coin balance from server whenever the authenticated student changes.
+  // Covers the case where the user is already logged in on page load (token in
+  // localStorage) and the localStorage-cached coin value is stale.
+  useEffect(() => {
+    if (isAuthenticated && student.id && currentUser?.role === 'STUDENT') {
+      void refreshCoins();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, student.id]);
+
+  // Re-sync coins whenever the tab becomes visible or the window regains focus.
+  // This covers manual DB top-ups (e.g. add-coins.js) that happen while the app
+  // is already loaded — no logout/reload needed.
+  useEffect(() => {
+    const sync = () => {
+      if (isAuthenticated && currentUser?.role === 'STUDENT') void refreshCoins();
+    };
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', sync);
+    return () => {
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', sync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, currentUser?.role]);
+
   // 3-Day wait period cooldown check for individually registered students
   useEffect(() => {
     const checkIndependentCooldown = () => {
@@ -1814,6 +1840,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else {
             setLatestReport(null);
           }
+          // Sync the coin balance from the server right after profile load so
+          // the localStorage-cached value is never shown for more than one paint.
+          void refreshCoins();
         }
       } catch (err) {
         console.warn('Profile fetch after login:', err);
@@ -1840,6 +1869,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (prof) {
         setStudent(prof);
         setLatestReport(null);
+        void refreshCoins();
       }
     } catch (err) {
       console.warn('Profile fetch after candidate register:', err);
@@ -1931,6 +1961,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (prof) {
         setStudent(prof);
         setLatestReport(prof.recentReports?.[0] || null);
+        void refreshCoins();
       }
     } catch (err) {
       console.warn('Profile fetch after verification:', err);
