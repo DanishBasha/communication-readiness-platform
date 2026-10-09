@@ -6,6 +6,7 @@ import { sendSuccess, sendError } from '../../shared/helpers/response';
 import { authenticate, AuthRequest } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/authorize';
 import { CreditService } from '../credits/credits.service';
+import { assertStudentAccess } from '../../shared/auth/studentScope';
 
 export const attemptsRouter = Router();
 
@@ -124,10 +125,8 @@ attemptsRouter.get(
 
       const attempt = rows[0];
 
-      // Access control: student sees only own; mentor/admin sees all
-      if (user.role === 'STUDENT' && attempt.student_user_id !== user.id) {
-        throw new AppError(403, 'Access denied', 'FORBIDDEN');
-      }
+      // Access control: verify user has access to this student's attempt
+      await assertStudentAccess(user, attempt.student_id);
 
       sendSuccess(res, { attempt });
     } catch (err) {
